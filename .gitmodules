@@ -1,0 +1,24 @@
+[submodule "thirdparty/stuff"]
+	path = thirdparty/stuff
+	url = git@github.com:xor-shift/stuff.git
+[submodule "thirdparty/imgui-sfml"]
+	path = thirdparty/imgui-sfml
+	url = https://github.com/SFML/imgui-sfml
+[submodule "thirdparty/SFML"]
+	path = thirdparty/SFML
+	url = https://github.com/SFML/SFML
+[submodule "thirdparty/fmt"]
+	path = thirdparty/fmt
+	url = https://github.com/fmtlib/fmt
+[submodule "thirdparty/spdlog"]
+	path = thirdparty/spdlog
+	url = https://github.com/gabime/spdlog
+[submodule "thirdparty/imgui"]
+	path = thirdparty/imgui
+	url = https://github.com/ocornut/imgui
+[submodule "thirdparty/imgui_club"]
+	path = thirdparty/imgui_club
+	url = https://github.com/ocornut/imgui_club
+[submodule "thirdparty/googletest"]
+	path = thirdparty/googletest
+	url = https://github.com/google/googletest
