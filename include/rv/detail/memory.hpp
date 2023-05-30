@@ -160,6 +160,11 @@ struct memory {
         return {};
     }
 
+    auto load_bin(std::basic_istream<char>& input_stream) -> stf::expected<void, std::string_view> {
+        std::copy(std::istreambuf_iterator<char>(input_stream),std::istreambuf_iterator<char>(), m_memory);
+        return {};
+    }
+
     template<std::unsigned_integral T>
     constexpr auto mem_read(register_type address) const -> T {
         std::array<u8, sizeof(T)> buf{0};

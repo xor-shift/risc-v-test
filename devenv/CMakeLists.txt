@@ -22,7 +22,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(LINKER_SCRIPT ${CMAKE_SOURCE_DIR}/link.ld)
 
 add_compile_options(-march=rv64imafdc -mabi=lp64d)
-add_compile_options(-ffunction-sections -fdata-sections -fno-use-cxa-atexit)
+add_compile_options(-ffunction-sections -fdata-sections -mno-relax)
 add_link_options(-ffunction-sections -fdata-sections -Wl,-gc-sections,--print-memory-usage)
 add_link_options(-T ${LINKER_SCRIPT})
 

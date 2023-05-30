@@ -24,7 +24,7 @@ struct program {
         : m_window(sf::VideoMode({1280, 720}), "lorem ipsum")
         , m_processor_worker_thread([this] { processor_worker(); }) {
         m_window.setFramerateLimit(60);
-        ImGui::SFML::Init(m_window);
+        std::ignore = ImGui::SFML::Init(m_window);
 
         load_fonts();
 
@@ -268,7 +268,7 @@ private:
         m_fonts["Karla Regular (TTF)"] = io.Fonts->AddFontFromFileTTF("Karla-Regular.ttf", 13);
         m_fonts["Cousine Regular (TTF)"] = io.Fonts->AddFontFromFileTTF("Cousine-Regular.ttf", 13);
         io.Fonts->Build();
-        ImGui::SFML::UpdateFontTexture();
+        std::ignore = ImGui::SFML::UpdateFontTexture();
 
         m_font = m_fonts["Droid Sans (TTF)"];
     }

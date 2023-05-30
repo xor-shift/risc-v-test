@@ -10,6 +10,9 @@ constexpr risc_v<RegisterType, ISA, Allocator>::risc_v(usize ram_sz, Allocator c
     : m_memory(ram_sz, allocator) {
     auto ifs = std::ifstream("a.hex");
     m_memory.load_hex(ifs);
+
+    //auto ifs = std::ifstream("a.elf");
+    //m_memory.load_bin(ifs);
 }
 
 template<typename RegisterType, typename ISA, typename Allocator>
