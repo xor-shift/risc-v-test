@@ -50,11 +50,11 @@ int64_t test_outputs[10]{
 
 static struct foo {
     foo() {
-        test_outputs[8] = 0x0E0D000C0D0A0E0Dll;
+        //test_outputs[8] = 0x0E0D000C0D0A0E0Dll;
     }
 
     ~foo() {
-        test_outputs[8] = 0;
+        test_outputs[8] = 0x0E0D000C0D0A0E0Dll;
     }
 } awsdasdasdfasdfv {};
 
@@ -188,6 +188,8 @@ extern "C" int main() {
     test_outputs[5] = read_cyc();
     assert_eq<int64_t>(test_outputs[6] = factorial_iterative(7l), 5040l);
     test_outputs[7] = read_cyc();
+
+    test_outputs[8] = 1;
 
     game_of_life[1][2] = 1;
     game_of_life[2][3] = 1;

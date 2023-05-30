@@ -2,12 +2,17 @@
 #include <cstdint>
 #include <cstring>
 
+extern "C" void __libc_preinit_array();
 extern "C" void __libc_init_array();
 extern "C" void __libc_fini_array();
+extern "C" [[noreturn]] void _start();
 extern "C" int __bss_start[];
 extern "C" int __bss_end[];
+extern "C" long __data_start_flash[];
+extern "C" long __data_start_ram[];
+extern "C" long __data_end_ram[];
 
-//extern int main(int, char**);
+extern "C" int main(int, char**);
 
 namespace rv::detail {
 
@@ -23,13 +28,24 @@ void zerofill_bss() {
     //memset(__bss_start, 0, (__bss_end - __bss_start) * sizeof(int));
 }
 
+void load_data() {
+    long* data_ptr_flash = __data_start_flash;
+    long* data_ptr_ram = __data_start_ram;
+    long* data_ptr_ram_end = __data_end_ram;
+
+    while (data_ptr_ram != data_ptr_ram_end) {
+        *data_ptr_ram++ = *data_ptr_flash++;
+    }
+}
+
 void entry_point() {
     zerofill_bss();
+    load_data();
 
     __libc_init_array();
 
     char* dummy_argv[]{};
-    //main(0, nullptr);
+    main(0, nullptr);
 
     __libc_fini_array();
 }

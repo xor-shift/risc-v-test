@@ -8,7 +8,7 @@ namespace rv {
 template<typename RegisterType, typename ISA, typename Allocator>
 constexpr risc_v<RegisterType, ISA, Allocator>::risc_v(usize ram_sz, Allocator const& allocator)
     : m_memory(ram_sz, allocator) {
-    auto ifs = std::ifstream("../devenv/build-debug/risc_v_test_prog.hex");
+    auto ifs = std::ifstream("a.hex");
     m_memory.load_hex(ifs);
 }
 

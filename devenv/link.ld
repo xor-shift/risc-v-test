@@ -2,140 +2,99 @@ OUTPUT_ARCH( "riscv" )
 ENTRY( _custom_start )
 
 MEMORY {
-    FLASH (rxai!w) : ORIGIN = 0x00000, LENGTH = 512K
-    RAM   (wxa!ri) : ORIGIN = 0x80000, LENGTH = 512K
+    FLASH (rx)  : ORIGIN = 0x0000, LENGTH = 32K
+    RAM   (xrw) : ORIGIN = 0x8000, LENGTH = 32K
 }
 
-#_estack_upper_bits = ((ORIGIN(RAM) + LENGTH(RAM)) & 0xFFFFF000) >> 12;
-#_estack_lower_bits = ((ORIGIN(RAM) + LENGTH(RAM)) & 0x00000FFF);
-#PROVIDE(_estack = ORIGIN(RAM) + LENGTH(RAM));
-#PROVIDE(_memory_start = ORIGIN(ram));
-#PROVIDE(_memory_end = _memory_start + LENGTH(ram));
-
-PHDRS {
-  FLASH PT_LOAD;
-  RAM_INIT PT_LOAD;
-  RAM PT_NULL;
-}
+__stack_size = 0x800;
+#_estack = ORIGIN(RAM) + LENGTH(RAM);
 
 SECTIONS {
-    __stack_size = DEFINED(__stack_size) ? __stack_size : 2K;
+    .text : {
+        . = ALIGN(2);
+        CMakeFiles/risc_v_test_prog.elf.dir/src/startup.s.obj(.text)
+        *(.text)
+        *(.text*)
 
-    .init : {
-        KEEP(*(SORT_NONE(.init)))
-    } >FLASH AT>FLASH :FLASH
+        KEEP (*(.init))
+        KEEP (*(.fini))
 
-	.text : {
-	    CMakeFiles/risc_v_test_prog.elf.dir/src/startup.s.obj(.text)
-	    #entry.o(.text)
-
-        *(_start)
-        *(.text.unlikely .text.unlikely.*)
-        *(.text.startup .text.startup.*)
-        *(.text .text.*)
-        *(.gnu.linkonce.t.*)
-	} >FLASH AT>FLASH :FLASH
-
-    .fini : {
-        KEEP(*(SORT_NONE(.fini)))
-    } >FLASH AT>FLASH :FLASH
-
-    PROVIDE(__etext = .);
-    PROVIDE(_etext = .);
-    PROVIDE(etext = .);
+        __text_end = .;
+    } >FLASH
 
     .rodata : {
-        *(.rdata)
-        *(.rodata .rodata.*)
-        *(.gnu.linkonce.r.*)
-    } >FLASH AT>FLASH :FLASH
-
-    . = ALIGN(4);
+        . = ALIGN(8);
+        *(.rodata)
+        *(.rodata.*)
+    } >FLASH
 
     .preinit_array : {
+        . = ALIGN(8);
         PROVIDE_HIDDEN(__preinit_array_start = .);
-        KEEP(*(.preinit_array))
+        KEEP(*(.preinit_array*))
         PROVIDE_HIDDEN(__preinit_array_end = .);
-    } >FLASH AT>FLASH :FLASH
+    } >FLASH
 
-    .preinit_array : {
+    .init_array : {
+        . = ALIGN(8);
         PROVIDE_HIDDEN(__init_array_start = .);
-        KEEP(*(SORT_BY_INIT_PRIORITY(.init_array.*) SORT_BY_INIT_PRIORITY(.ctors.*)))
-        KEEP(*(.init_array EXCLUDE_FILE(*crtbegin.o *crtbegin?.o *crtend.o *crtend?.o) .ctors))
+        KEEP(*(SORT(.init_array.*)))
+        KEEP(*(.init_array*))
         PROVIDE_HIDDEN(__init_array_end = .);
-    } >FLASH AT>FLASH :FLASH
+    } >FLASH
 
     .fini_array : {
+        . = ALIGN(8);
         PROVIDE_HIDDEN(__fini_array_start = .);
-        KEEP(*(SORT_BY_INIT_PRIORITY(.fini_array.*) SORT_BY_INIT_PRIORITY(.dtors.*)))
-        KEEP(*(.fini_array EXCLUDE_FILE(*crtbegin.o *crtbegin?.o *crtend.o *crtend?.o) .dtors))
+        KEEP(*(SORT(.fini_array.*)))
+        KEEP(*(.fini_array*))
         PROVIDE_HIDDEN(__fini_array_end = .);
-    } >FLASH AT>FLASH :FLASH
+    } >FLASH
 
     .ctors : {
-        KEEP(*crtbegin.o(.ctors))
-        KEEP(*crtbegin?.o(.ctors))
-        KEEP(*(EXCLUDE_FILE (*crtend.o *crtend?.o ) .ctors))
-        KEEP(*(SORT(.ctors.*)))
-        KEEP(*(.ctors))
-    } >FLASH AT>FLASH :FLASH
+        KEEP (*crtbegin.o(.ctors))
+        KEEP (*crtbegin?.o(.ctors))
+        KEEP (*(EXCLUDE_FILE (*crtend.o *crtend?.o ) .ctors))
+        KEEP (*(SORT(.ctors.*)))
+        KEEP (*(.ctors))
+    } >FLASH
 
     .dtors : {
-        KEEP(*crtbegin.o(.dtors))
-        KEEP(*crtbegin?.o(.dtors))
-        KEEP(*(EXCLUDE_FILE (*crtend.o *crtend?.o ) .dtors))
-        KEEP(*(SORT(.dtors.*)))
-        KEEP(*(.dtors))
-    } >FLASH AT>FLASH :FLASH
+        KEEP (*crtbegin.o(.dtors))
+        KEEP (*crtbegin?.o(.dtors))
+        KEEP (*(EXCLUDE_FILE (*crtend.o *crtend?.o ) .dtors))
+        KEEP (*(SORT(.dtors.*)))
+        KEEP (*(.dtors))
+    } >FLASH
 
-    .lalign : {
-        . = ALIGN(4);
-        PROVIDE(_data_lma = .);
-    } >FLASH AT>FLASH :FLASH
-
-    .dalign : {
-        . = ALIGN(4);
-        PROVIDE(_data = .);
-    } >FLASH AT>FLASH :FLASH
-
+    __data_start_flash = LOADADDR(.data);
     .data : {
-        *(.data .data.*)
-        *(.gnu.linkonce.d.*)
         . = ALIGN(8);
-        PROVIDE(__global_pointer$ = . + 0x800);
-        *(.sdata .sdata.*)
-        *(.gnu.linkonce.s.*)
+        PROVIDE(__global_pointer$ = . + 0x800); # why?
+        __data_start_ram = .;
+        *(.data)
+        *(.data.*)
         . = ALIGN(8);
-        *(.srodata.cst16)
-        *(.srodata.cst8)
-        *(.srodata.cst4)
-        *(.srodata.cst2)
-        *(.srodata .srodata.*)
-    } >FLASH AT>FLASH :FLASH
+        __data_end_ram = .;
+        _edata = __data_end_ram;
+    } >RAM AT> FLASH
 
-    . = ALIGN(4);
-    PROVIDE(_edata = .);
-    PROVIDE(edata = .);
-
-    PROVIDE(_fbss = .);
-    PROVIDE(__bss_start = .);
     .bss : {
-        *(.sbss*)
-        *(.gnu.linkonce.sb.*)
-        *(.bss .bss.*)
-        *(.gnu.linkonce.b.*)
+        . = ALIGN(8);
+        __bss_start = .;
+        *(.bss)
+        *(.bss.*)
         *(COMMON)
-        . = ALIGN(4);
-    } >FLASH AT>FLASH :FLASH
-    PROVIDE(__bss_end = .);
+        . = ALIGN(8);
+        __bss_end = .;
+    } >RAM
 
     . = ALIGN(8);
     PROVIDE(_end = .);
-    PROVIDE(end = .);
 
-    .stack ORIGIN(RAM) + LENGTH(RAM) - __stack_size : {
+    ._user_heap_stack ORIGIN(RAM) + LENGTH(RAM) - __stack_size : {
         PROVIDE(_heap_end = .);
         . = __stack_size;
-        PROVIDE(_estack = .);
-    } >RAM AT>RAM :RAM
+        _estack = .;
+    } >RAM
 }

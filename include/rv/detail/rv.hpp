@@ -14,7 +14,7 @@ struct risc_v {
     using register_type = RegisterType;
     using float_type = RegisterType;
 
-    constexpr risc_v(usize ram_sz = 0x10'0000, Allocator const& allocator = Allocator());
+    constexpr risc_v(usize ram_sz = 0x1'0000, Allocator const& allocator = Allocator());
 
     constexpr void reset();
 

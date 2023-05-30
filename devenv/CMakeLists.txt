@@ -22,7 +22,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(LINKER_SCRIPT ${CMAKE_SOURCE_DIR}/link.ld)
 
 add_compile_options(-march=rv64imafdc -mabi=lp64d)
-add_compile_options(-ffunction-sections -fdata-sections)
+add_compile_options(-ffunction-sections -fdata-sections -fno-use-cxa-atexit)
 add_link_options(-ffunction-sections -fdata-sections -Wl,-gc-sections,--print-memory-usage)
 add_link_options(-T ${LINKER_SCRIPT})
 
@@ -57,5 +57,4 @@ set(BIN_FILE ${PROJECT_BINARY_DIR}/${PROJECT_NAME}.bin)
 add_custom_command(TARGET ${PROJECT_NAME}.elf POST_BUILD
         COMMAND ${CMAKE_OBJCOPY} -Oihex $<TARGET_FILE:${PROJECT_NAME}.elf> ${HEX_FILE}
         COMMAND ${CMAKE_OBJCOPY} -Obinary $<TARGET_FILE:${PROJECT_NAME}.elf> ${BIN_FILE}
-        COMMENT "Building ${HEX_FILE}
-Building ${BIN_FILE}")
+        )

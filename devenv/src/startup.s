@@ -15,6 +15,11 @@
 def _custom_start
     la sp, _estack
 
+.option push
+.option norelax
+    la gp, __global_pointer$
+.option pop
+
     la t0, _trap_handler
     csrw mtvec, t0
 

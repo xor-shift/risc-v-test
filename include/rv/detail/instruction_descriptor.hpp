@@ -188,7 +188,7 @@ struct instruction_set {
             it = fmt::format_to(it, "unknown");
         }
 
-        return it;
+        return std::forward<OIt>(it);
     }
 
     static constexpr auto format(u32 v) -> std::string {
