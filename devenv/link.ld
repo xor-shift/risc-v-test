@@ -10,9 +10,15 @@ __stack_size = 0x800;
 #_estack = ORIGIN(RAM) + LENGTH(RAM);
 
 SECTIONS {
+    .init : {
+        . = ALIGN(2);
+
+        *(.init)
+    }
+
     .text : {
         . = ALIGN(2);
-        CMakeFiles/risc_v_test_prog.elf.dir/src/startup.s.obj(.text)
+
         *(.text)
         *(.text*)
 
@@ -24,8 +30,8 @@ SECTIONS {
 
     .rodata : {
         . = ALIGN(8);
-        *(.rodata)
-        *(.rodata.*)
+        *(.rodata .rodata.*)
+        *(.srodata .srodata.*)
     } >FLASH
 
     .preinit_array : {
@@ -51,29 +57,16 @@ SECTIONS {
         PROVIDE_HIDDEN(__fini_array_end = .);
     } >FLASH
 
-    .ctors : {
-        KEEP (*crtbegin.o(.ctors))
-        KEEP (*crtbegin?.o(.ctors))
-        KEEP (*(EXCLUDE_FILE (*crtend.o *crtend?.o ) .ctors))
-        KEEP (*(SORT(.ctors.*)))
-        KEEP (*(.ctors))
-    } >FLASH
-
-    .dtors : {
-        KEEP (*crtbegin.o(.dtors))
-        KEEP (*crtbegin?.o(.dtors))
-        KEEP (*(EXCLUDE_FILE (*crtend.o *crtend?.o ) .dtors))
-        KEEP (*(SORT(.dtors.*)))
-        KEEP (*(.dtors))
-    } >FLASH
-
     __data_start_flash = LOADADDR(.data);
     .data : {
         . = ALIGN(8);
-        PROVIDE(__global_pointer$ = . + 0x800); # why?
         __data_start_ram = .;
         *(.data)
         *(.data.*)
+        . = ALIGN(8);
+        PROVIDE(__global_pointer$ = . + 0x800); # why?
+        *(.sdata)
+        *(.sdata.*)
         . = ALIGN(8);
         __data_end_ram = .;
         _edata = __data_end_ram;
@@ -82,8 +75,8 @@ SECTIONS {
     .bss : {
         . = ALIGN(8);
         __bss_start = .;
-        *(.bss)
-        *(.bss.*)
+        *(.bss .bss.*)
+        *(.sbss .sbss.*)
         *(COMMON)
         . = ALIGN(8);
         __bss_end = .;

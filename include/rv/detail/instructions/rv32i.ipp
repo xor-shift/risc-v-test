@@ -92,7 +92,7 @@ struct functor_store {
     constexpr auto operator()(Self& self, instruction_descriptor desc) -> typename Self::register_type {
         const auto reg_src_1 = self.m_register_bank.read_register(desc.reg_src_1());
         const auto reg_src_2 = self.m_register_bank.read_register(desc.reg_src_2());
-        self.m_memory.template mem_write<StoreAs>(reg_src_1 + desc.store_offset<typename Self::register_type>(), (StoreAs)reg_src_2);
+        self.m_memory.template write<StoreAs>(reg_src_1 + desc.store_offset<typename Self::register_type>(), (StoreAs)reg_src_2);
         return self.m_next_step_sz;
     }
 };
@@ -106,7 +106,7 @@ struct functor_load {
         const auto reg_src_1 = self.m_register_bank.read_register(desc.reg_src_1());
         const auto immediate = desc.immediate<u64>();
         const auto addr = reg_src_1 + immediate;
-        const auto res = arith::sext<register_type, sizeof(LoadAs) * 8>((register_type)self.m_memory.template mem_read<LoadAs>(addr));
+        const auto res = arith::sext<register_type, sizeof(LoadAs) * 8>((register_type)self.m_memory.template read<LoadAs>(addr));
         self.m_register_bank.write_register(desc.reg_dst(), res);
         return self.m_next_step_sz;
     }
@@ -120,7 +120,7 @@ struct functor_load_unsigned {
 
         const auto reg_src_1 = self.m_register_bank.read_register(desc.reg_src_1());
         const auto immediate = desc.immediate<register_type>();
-        self.m_register_bank.write_register(desc.reg_dst(), (register_type)self.m_memory.template mem_read<u8>(reg_src_1 + immediate));
+        self.m_register_bank.write_register(desc.reg_dst(), (register_type)self.m_memory.template read<u8>(reg_src_1 + immediate));
         return self.m_next_step_sz;
     }
 };
@@ -156,13 +156,13 @@ using is_rv32i = instruction_set<
     }),
 
     RV_INSTRUCTION("jal", RV32I, jump, uimm_matcher<0b11011'11>, default_formatter, {
-        bool is_compressed = (self.m_memory.template mem_read<u32>(self.m_program_counter) & 0b11) != 0b11;
+        bool is_compressed = (self.m_memory.template read<u32>(self.m_program_counter) & 0b11) != 0b11;
         self.m_register_bank.write_register(desc.reg_dst(), self.m_program_counter + self.m_next_step_sz);
         return desc.jump_offset<u64>();
     }),
 
     RV_INSTRUCTION("jalr", RV32I, immediate, decltype(imm_matcher<0b11001'11, 0b000>{}), default_formatter, {
-        bool is_compressed = (self.m_memory.template mem_read<u32>(self.m_program_counter) & 0b11) != 0b11;
+        bool is_compressed = (self.m_memory.template read<u32>(self.m_program_counter) & 0b11) != 0b11;
         const auto temp = self.m_program_counter + self.m_next_step_sz;
         self.m_program_counter = (self.m_register_bank.read_register(desc.reg_src_1()) + desc.immediate<u64>()) & (~(u64)1);
         self.m_register_bank.write_register(desc.reg_dst(), temp);

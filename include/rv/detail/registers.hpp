@@ -16,7 +16,7 @@ struct register_bank {
         auto dist = std::uniform_int_distribution<register_type>{};
         for (auto& reg : m_registers) {
             reg = dist(gen);
-            //reg = 0;
+            // reg = 0;
         }
     }
 
@@ -41,4 +41,4 @@ private:
     float_type m_float_registers[32]{};
 };
 
-}
+}  // namespace rv

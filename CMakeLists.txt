@@ -35,6 +35,7 @@ elseif(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "RelWith
 endif()
 
 add_executable(${PROJECT_NAME}_tests
+        tests/cache.cpp
         tests/rvc.cpp
         tests/rvi.cpp
         tests/rvm.cpp
@@ -45,7 +46,7 @@ target_link_options(${PROJECT_NAME}_tests PRIVATE -fsanitize=address -fsanitize=
 target_include_directories(${PROJECT_NAME}_tests PRIVATE include)
 
 target_link_libraries(${PROJECT_NAME}_tests
-        fmt::fmt
+        fmt::fmt spdlog::spdlog
         gtest gtest_main
         stuff_core stuff_random
         )

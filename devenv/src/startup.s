@@ -12,13 +12,9 @@
     .size \name, .-\name;
 .endm
 
+.section .init
 def _custom_start
     la sp, _estack
-
-.option push
-.option norelax
-    la gp, __global_pointer$
-.option pop
 
     la t0, _trap_handler
     csrw mtvec, t0
@@ -28,6 +24,7 @@ def _custom_start
     .loop:
         jal zero, .loop
 fed _custom_start
+.section .text
 
 def _trap_handler
     call _c_trap_handler

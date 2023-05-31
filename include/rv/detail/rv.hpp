@@ -5,9 +5,11 @@
 
 namespace rv {
 
-struct infmt_ihex_tag {};
-struct infmt_bin_tag {};
-struct infmt_elf_tag {};
+enum class csr_write_type {
+    write,
+    set,
+    clear,
+}
 
 template<typename RegisterType, typename ISA, typename Allocator = std::allocator<u8>>
 struct risc_v {
@@ -18,9 +20,11 @@ struct risc_v {
 
     constexpr void reset();
 
-    constexpr void reset_and_load(std::string_view filename, infmt_ihex_tag);
-    constexpr void reset_and_load(std::string_view filename, infmt_bin_tag);
-    constexpr void reset_and_load(std::string_view filename, infmt_elf_tag);
+    template<typename FileTypeTag>
+    constexpr void load(std::string_view filename, FileTypeTag, usize offset = 0) {
+        reset();
+        m_memory.load_from(filename, FileTypeTag{}, offset);
+    }
 
     constexpr auto step() -> stf::expected<void, std::string_view>;
 
@@ -31,9 +35,16 @@ struct risc_v {
     constexpr auto program_counter() -> register_type { return m_program_counter; }
     constexpr auto read_register(reg reg) -> register_type { return m_register_bank.read_register(reg); }
 
+    template<csr_write_type Type>
+    constexpr auto csr_read_write(reg destination, register_type value, u32 addr) {
+        auto val = m_register_bank.read_register(src);
+        //
+    }
+
     register_bank<register_type> m_register_bank;
     rv::memory<register_type, Allocator> m_memory;
     register_type m_program_counter = 0;
+
     register_type m_next_step_sz = 4;
 };
 

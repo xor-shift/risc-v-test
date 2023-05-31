@@ -411,7 +411,7 @@ template<typename... InstDefs>
 template<typename Self>
 constexpr auto instruction_set<InstDefs...>::try_step(Self& self) -> stf::expected<void, std::string_view> {
     // spdlog::trace("stepping into address {:#08X}", self.m_program_counter);
-    const auto instruction_word = self.m_memory.template mem_read<u32>(self.m_program_counter);
+    const auto instruction_word = self.m_memory.template read<u32>(self.m_program_counter);
     if ((instruction_word & 0b11) == 0b11) {
         self.m_next_step_sz = 4;
     } else {

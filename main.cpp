@@ -15,14 +15,89 @@
 #include <imgui_memory_editor/imgui_memory_editor.h>
 #include <SFML/Graphics.hpp>
 
+#include <chrono>
 #include <functional>
 #include <random>
 #include <string_view>
+
+template<std::floating_point T>
+struct averager {
+    constexpr averager(usize window_size)
+        : m_data(window_size) {}
+
+    constexpr auto average() const -> T {
+        if (!m_average_invalid) {
+            return m_average_cache;
+        }
+
+        m_average_invalid = false;
+        const auto avg = std::reduce(m_data.begin(), m_data.end(), T(0)) / static_cast<T>(m_data.size());
+        return m_average_cache = avg;
+    }
+
+    constexpr auto stdev() const -> T {
+        if (!m_stdev_invalid) {
+            return m_stdev_cache;
+        }
+
+        m_stdev_invalid = false;
+
+        const auto sum = std::accumulate(m_data.begin(), m_data.end(), T(0), [this](T accumulator, T val) {
+            const auto temp = val - average();
+            return accumulator + temp * temp;
+        });
+
+        return m_stdev_cache = std::sqrt(sum / static_cast<T>(m_data.size()));
+    }
+
+    constexpr auto below_z_score(T z) const -> T {
+        const auto at_most = average() + stdev() * z;
+
+        usize count = 0;
+        const auto sum = std::accumulate(m_data.begin(), m_data.end(), T(0), [at_most, &count](T accumulator, T val) {
+            if (val > at_most) {
+                return accumulator;
+            }
+
+            ++count;
+            return accumulator + val;
+        });
+
+        if (count == 0) {
+            return 0;
+        }
+
+        return sum / static_cast<T>(count);
+    }
+
+    constexpr auto percentile_95() const -> T { return below_z_score((T)-1.6449); }
+
+    constexpr auto percentile_99() const -> T { return below_z_score((T)-2.3263); }
+
+    constexpr auto add_sample(T v) {
+        m_average_invalid = true;
+        m_stdev_invalid = true;
+
+        m_data[m_data_ptr++ % m_data.size()] = v; }
+
+private:
+    std::vector<T> m_data;
+
+    mutable bool m_average_invalid = true;
+    mutable T m_average_cache;
+
+    mutable bool m_stdev_invalid = true;
+    mutable T m_stdev_cache;
+
+    usize m_data_ptr = 0;
+};
 
 struct program {
     program()
         : m_window(sf::VideoMode({1280, 720}), "lorem ipsum")
         , m_processor_worker_thread([this] { processor_worker(); }) {
+        m_risc_v.load("a.hex", rv::infmt_ihex_tag{}, 0);
+
         m_window.setFramerateLimit(60);
         std::ignore = ImGui::SFML::Init(m_window);
 
@@ -63,17 +138,6 @@ struct program {
 
                     if (ImGui::BeginTabBar("LHSTabBar")) {
                         if (ImGui::BeginTabItem("Control and State")) {
-                            ImGui::Button("Run/Pause");
-                            ImGui::SameLine();
-                            if (ImGui::Button("Step")) {
-                                stf::send(m_request_channel, processor_request{.run = false, .amt_steps = 1});
-                            }
-                            rv::imgui::input_scalar("Amt Steps", m_amt_steps);
-                            ImGui::SameLine();
-                            if (ImGui::Button("Run For")) {
-                                stf::send(m_request_channel, processor_request{.run = false, .amt_steps = m_amt_steps});
-                            }
-
                             if (ImGui::Button("Run")) {
                                 stf::send(m_request_channel, processor_request{.run = true});
                             }
@@ -81,9 +145,22 @@ struct program {
                             if (ImGui::Button("Stop")) {
                                 stf::send(m_request_channel, processor_request{.run = false});
                             }
-
+                            ImGui::SameLine();
+                            if (ImGui::Button("Step")) {
+                                stf::send(m_request_channel, processor_request{.run = false, .amt_steps = 1});
+                            }
                             ImGui::SameLine();
                             ImGui::Button("Reset");
+
+                            rv::imgui::input_scalar("Amt Steps", m_amt_steps);
+                            ImGui::SameLine();
+                            if (ImGui::Button("Run For")) {
+                                stf::send(m_request_channel, processor_request{.run = false, .amt_steps = m_amt_steps});
+                            }
+
+                            ImGui::TextUnformatted(fmt::format("Instructions per Second: {:.2f}", m_ips_averager.average()).c_str());
+                            ImGui::TextUnformatted(fmt::format("Instructions per Second (95th): {:.2f}", m_ips_averager.percentile_95()).c_str());
+                            ImGui::TextUnformatted(fmt::format("Instructions per Second (99th): {:.2f}", m_ips_averager.percentile_99()).c_str());
 
                             ImGui::BeginTable(
                               "##control_brief_info_table", 2, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_BordersV | ImGuiTableFlags_BordersH | ImGuiTableFlags_RowBg
@@ -95,7 +172,7 @@ struct program {
                             ImGui::TableNextColumn();
                             ImGui::TextUnformatted(fmt::format("{:016X}", m_risc_v.program_counter()).c_str());
 
-                            const auto next_instruction_word = m_risc_v.memory().mem_read<u32>(m_risc_v.program_counter());
+                            const auto next_instruction_word = m_risc_v.memory().read<u32>(m_risc_v.program_counter());
 
                             ImGui::TableNextRow();
                             ImGui::TableNextColumn();
@@ -197,6 +274,7 @@ private:
     ImFont* m_font = nullptr;
     ImFontConfig m_font_config{};
 
+    averager<double> m_ips_averager{4096};
     rv::risc_v<u64, rv::isa_type_64> m_risc_v{};
     usize m_amt_steps = 0;
     MemoryEditor m_memory_editor{};
@@ -218,18 +296,27 @@ private:
                 break;
             }
 
-            constexpr auto step_batch_amt = 8uz;
+            constexpr auto step_batch_amt = 16uz;
 
             const auto batch_count = request.amt_steps / step_batch_amt;
             const auto batch_excess = request.amt_steps % step_batch_amt;
 
             auto step = [this](usize step_for) {
+                const auto tp_0 = std::chrono::system_clock::now();
+                stf::scope::scope_exit chrono_guard{[this, tp_0] {
+                    const auto tp_1 = std::chrono::system_clock::now();
+
+                    const auto t_delta_secs = static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>(tp_1 - tp_0).count()) / 1e6;
+
+                    m_ips_averager.add_sample(static_cast<double>(step_batch_amt) / t_delta_secs);
+                }};
+
                 for (usize step = 0; step < step_for; step++) {
                     const auto pc_0 = m_risc_v.m_program_counter;
                     m_risc_v.step();
                     const auto pc_1 = m_risc_v.m_program_counter;
 
-                    if (pc_0 == pc_1) {
+                    if (pc_0 == pc_1) [[unlikely]] {
                         return false;
                     }
                 }

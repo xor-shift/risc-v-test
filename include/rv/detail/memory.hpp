@@ -4,6 +4,7 @@
 
 #include <rv/detail/rand.hpp>
 
+#include <filesystem>
 #include <fstream>
 
 namespace rv {
@@ -126,7 +127,11 @@ private:
     }
 };
 
-}
+}  // namespace detail
+
+struct infmt_ihex_tag {};
+struct infmt_bin_tag {};
+struct infmt_elf_tag {};
 
 template<typename RegisterType = u64, typename Allocator = std::allocator<u8>>
 struct memory {
@@ -145,7 +150,17 @@ struct memory {
 
     constexpr ~memory() { m_allocator.deallocate(m_memory, (usize)m_memory_size); }
 
-    auto load_hex(std::basic_istream<char>& input_stream) -> stf::expected<void, std::string_view> {
+    template<typename FileTypeTag>
+    auto load_from(std::string_view filename, FileTypeTag, usize offset = 0) -> stf::expected<void, std::string_view> {
+        auto ifs = std::ifstream(std::filesystem::path(filename));
+        if (!ifs) {
+            return stf::unexpected{"could not open file"};
+        }
+
+        return load_from(ifs, FileTypeTag{}, offset);
+    }
+
+    auto load_from(std::basic_istream<char>& input_stream, infmt_ihex_tag, usize offset = 0) -> stf::expected<void, std::string_view> {
         for (std::string str_raw; std::getline(input_stream, str_raw);) {
             std::string_view record_line = str_raw;
             auto record = TRYX(detail::intel_hex_record::from_line(record_line));
@@ -160,20 +175,20 @@ struct memory {
         return {};
     }
 
-    auto load_bin(std::basic_istream<char>& input_stream) -> stf::expected<void, std::string_view> {
-        std::copy(std::istreambuf_iterator<char>(input_stream),std::istreambuf_iterator<char>(), m_memory);
+    auto load_from(std::basic_istream<char>& input_stream, infmt_bin_tag, usize offset = 0) -> stf::expected<void, std::string_view> {
+        std::copy(std::istreambuf_iterator<char>(input_stream), std::istreambuf_iterator<char>(), m_memory);
         return {};
     }
 
     template<std::unsigned_integral T>
-    constexpr auto mem_read(register_type address) const -> T {
+    constexpr auto read(register_type address) const -> T {
         std::array<u8, sizeof(T)> buf{0};
         std::copy_n(m_memory + address, std::min<T>(m_memory_size - address, sizeof(T)), buf.data());
         return stf::bit::convert_endian(std::bit_cast<T>(buf), std::endian::little, std::endian::little);
     }
 
     template<std::unsigned_integral T>
-    constexpr void mem_write(register_type address, T data) {
+    constexpr void write(register_type address, T data) {
         const auto buf = std::bit_cast<std::array<u8, sizeof(T)>>(stf::bit::convert_endian(data, std::endian::native, std::endian::little));
         std::copy_n(buf.data(), std::min<T>(m_memory_size - address, buf.size()), m_memory + address);
     }
@@ -190,4 +205,4 @@ private:
     u8* m_memory = nullptr;
 };
 
-}
+}  // namespace rv

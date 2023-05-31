@@ -13,7 +13,7 @@ set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 
 set(SIZE riscv64-unknown-elf-size)
 
-project(risc_v_test_prog C CXX ASM)
+project(rvtest C CXX ASM)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_C_STANDARD 17)
 
@@ -22,10 +22,9 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(LINKER_SCRIPT ${CMAKE_SOURCE_DIR}/link.ld)
 
 add_compile_options(-march=rv64imafdc -mabi=lp64d)
-add_compile_options(-ffunction-sections -fdata-sections -mno-relax)
+add_compile_options(--save-temps -ffunction-sections -fdata-sections -mno-relax)
 add_link_options(-ffunction-sections -fdata-sections -Wl,-gc-sections,--print-memory-usage)
 add_link_options(-T ${LINKER_SCRIPT})
-
 
 if("${CMAKE_BUILD_TYPE}" STREQUAL "Release")
     message(STATUS "release build")
@@ -41,20 +40,10 @@ else()
     add_compile_options(-O0)
 endif()
 
-file(GLOB_RECURSE SOURCES "${CMAKE_SORUCE_DIR}/src/*.*")
-
-add_executable(${PROJECT_NAME}.elf
-        src/startup.s
-        src/entry.cpp
-        src/special.cpp
-        src/prog.cpp
-        ${LINKER_SCRIPT})
-set_target_properties(${PROJECT_NAME}.elf PROPERTIES LINKER_LANGUAGE CXX)
-
-set(HEX_FILE ${PROJECT_BINARY_DIR}/${PROJECT_NAME}.hex)
-set(BIN_FILE ${PROJECT_BINARY_DIR}/${PROJECT_NAME}.bin)
+add_executable(${PROJECT_NAME}.elf src/startup.s src/entry.cpp src/main_gol.cpp)
 
 add_custom_command(TARGET ${PROJECT_NAME}.elf POST_BUILD
-        COMMAND ${CMAKE_OBJCOPY} -Oihex $<TARGET_FILE:${PROJECT_NAME}.elf> ${HEX_FILE}
-        COMMAND ${CMAKE_OBJCOPY} -Obinary $<TARGET_FILE:${PROJECT_NAME}.elf> ${BIN_FILE}
-        )
+    COMMAND ${CMAKE_OBJCOPY} -Oihex $<TARGET_FILE:${PROJECT_NAME}.elf> ${PROJECT_BINARY_DIR}/${PROJECT_NAME}.hex
+    COMMAND ${CMAKE_OBJCOPY} -Obinary $<TARGET_FILE:${PROJECT_NAME}.elf> ${PROJECT_BINARY_DIR}/${PROJECT_NAME}.bin
+    COMMAND readelf -SW $<TARGET_FILE:${PROJECT_NAME}.elf>
+    )
