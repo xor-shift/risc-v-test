@@ -105,24 +105,22 @@ struct instruction_descriptor {
     }
 };
 
-template<std::unsigned_integral T, T CareAbout, T Want>
+template<std::unsigned_integral T>
 struct bit_matcher {
     using value_type = T;
-    static constexpr auto care_about = CareAbout;
-    static constexpr auto want = Want;
+    T care_about;
+    T want;
 
-    template<T CareAboutOther, T WantOther>
-    static constexpr auto mutually_exclusive = true;
+    constexpr auto combine(T other_care_about, T other_want) const -> bit_matcher {
+        return {
+          .care_about = static_cast<T>(care_about | other_care_about),
+          .want = static_cast<T>(want | other_want),
+        };
+    }
 
-    template<T CareAboutOther, T WantOther>
-        requires mutually_exclusive<CareAboutOther, WantOther>
-    using combine_t = bit_matcher<T, CareAbout | CareAboutOther, Want | WantOther>;
+    constexpr auto combine_with(bit_matcher const& other) const -> bit_matcher { return combine(other.care_about, other.want); }
 
-    template<typename Other>
-        requires(std::is_same_v<typename Other::value_type, T>)
-    using combine_with_t = combine_t<Other::care_about, Other::want>;
-
-    static constexpr auto match(T v) -> bool {
+    constexpr auto match(T v) const -> bool {
         /*
          * !c || (v == w)
          * ~c | ~(v ^ w)
@@ -133,259 +131,420 @@ struct bit_matcher {
     }
 };
 
-static_assert(bit_matcher<u8, 0b1111'0000, 0b1010'1010>::match(0b1010'1100));
-static_assert(bit_matcher<u8, 0b1100'0000, 0b1010'1010>::combine_t<0b0011'0000, 0b1010'1010>::match(0b1010'1100));
-static_assert(!bit_matcher<u8, 0b1111'0000, 0b1010'1010>::match(0b1000'1100));
+static_assert(bit_matcher<u8>{0b1111'0000, 0b1010'1010}.match(0b1010'1100));
+static_assert(bit_matcher<u8>{0b1100'0000, 0b1010'1010}.combine(0b0011'0000, 0b1010'1010).match(0b1010'1100));
+static_assert(!bit_matcher<u8>{0b1111'0000, 0b1010'1010}.match(0b1000'1100));
+
+template<typename RiscV>
+struct instruction_properties {
+    using processor_type = RiscV;
+    using register_type = typename processor_type::register_type;
+
+    using executor_type = void (*)(processor_type&, instruction_descriptor);
+    using translator_type = u32 (*)(u32);
+    using formatter_type = std::string (*)(instruction_descriptor, bool);
+
+    std::string_view mnemonic;
+    instruction_standard standard;
+    opcode_format format;
+    bit_matcher<u32> matcher;
+
+    executor_type executor;
+    translator_type translator;
+    formatter_type formatter;
+};
+
+#define RV_QUICK_INSN(_rv, _mnemonic, _standard, _format, _matcher, _functor, _formatter)                                                           \
+    rv::instruction_properties<_rv> {                                                                                                               \
+        .mnemonic = _mnemonic, .standard = rv::instruction_standard::_standard, .format = rv::opcode_format::_format, .matcher = _matcher,          \
+        .executor = [](_rv& self, instruction_descriptor desc) -> void { _functor{}(self, desc); }, .translator = nullptr, .formatter = _formatter, \
+    }
+
+#define RV_QUICK_INSN_TR(_rv, _mnemonic, _standard, _format, _matcher, _functor, _formatter)                                                                    \
+    rv::instruction_properties<_rv> {                                                                                                                           \
+        .mnemonic = _mnemonic, .standard = rv::instruction_standard::_standard, .format = rv::opcode_format::_format, .matcher = _matcher, .executor = nullptr, \
+        .translator = [](u32 instruction_word) -> u32 { return _functor{}(instruction_word); }, .formatter = _formatter,                                        \
+    }
+
+#define RV_QUICK_INSN_FN(_rv, _mnemonic, _standard, _format, _matcher, _formatter, ...)                                                    \
+    rv::instruction_properties<_rv> {                                                                                                      \
+        .mnemonic = _mnemonic, .standard = rv::instruction_standard::_standard, .format = rv::opcode_format::_format, .matcher = _matcher, \
+        .executor = [](_rv & self, instruction_descriptor desc) -> void __VA_ARGS__, .translator = nullptr, .formatter = _formatter,       \
+    }
 
 namespace detail {
-
-template<typename T, typename U>
-struct instruction_set_combiner;
-
-}
-
-template<typename... InstDefs>
-struct instruction_set {
-    using instruction_def_types = stf::bunch_of_types<InstDefs...>;
-
-    template<typename Other>
-    using combine_with = typename detail::instruction_set_combiner<instruction_set<InstDefs...>, Other>::type;
-
-    template<typename Desc>
-    static constexpr auto get_descriptor(u32 v) -> instruction_descriptor {
-        return instruction_descriptor{
-          .word = v,
-          .mnemonic = Desc::mnemonic.c_str(),
-          .standard = Desc::standard,
-          .format = Desc::format,
-        };
-    }
-
-    static constexpr auto try_parse(u32 v) -> std::optional<instruction_descriptor> {
-        auto ret = std::optional<instruction_descriptor>{};
-        find_description<0>(v, [v, &ret]<typename Desc>(std::type_identity<Desc>) { ret = get_descriptor<Desc>(v); });
-        return ret;
-    }
-
-    template<typename OIt>
-    static constexpr auto format_to(u32 v, OIt&& it) -> OIt&& {
-        auto formatted = false;
-
-        find_description<0>(v, [v, &formatted, &it]<typename Desc>(std::type_identity<Desc>) {
-            formatted = true;
-
-            using Formatter = typename Desc::formatter_type;
-
-            it = Formatter::format_to(get_descriptor<Desc>(v), std::forward<OIt>(it));
-
-            if constexpr (requires { Desc::functor_type::get_translation(v); }) {
-                it = fmt::format_to(it, " -> ");
-                return format_to(Desc::functor_type::get_translation(v), std::forward<OIt>(it));
-            }
-        });
-
-        if (!formatted) {
-            it = fmt::format_to(it, "unknown");
-        }
-
-        return std::forward<OIt>(it);
-    }
-
-    static constexpr auto format(u32 v) -> std::string {
-        auto str = std::string{};
-        format_to(v, std::back_inserter(str));
-        return str;
-    }
-
-    template<typename Self>
-    static constexpr auto try_step(Self& self) -> stf::expected<void, std::string_view>;
-
-    template<typename Self>
-    static constexpr auto try_execute(Self& self, u32 word, std::optional<typename Self::register_type> forced_step_sz = std::nullopt) -> stf::expected<void, std::string_view>;
-
-private:
-    template<usize N, typename Fn>
-    static constexpr void find_description(u32 v, Fn&& fn) {
-        using Desc = typename instruction_def_types::template nth_type<N>;
-        if (Desc::match(v)) {
-            std::invoke(std::forward<Fn>(fn), std::type_identity<Desc>{});
-            return;
-        }
-
-        if constexpr (N + 1 != sizeof...(InstDefs)) {
-            return find_description<N + 1, Fn>(v, std::forward<Fn>(fn));
-        }
-    }
-};
-
-namespace detail {
-
-template<typename... InstDefs0, typename... InstDefs1>
-struct instruction_set_combiner<instruction_set<InstDefs0...>, instruction_set<InstDefs1...>> : std::type_identity<instruction_set<InstDefs0..., InstDefs1...>> {};
-
-namespace formatters {
-
-struct default_formatter {
-    template<typename OIt>
-    static constexpr auto format_to(instruction_descriptor const& instruction, OIt&& it) -> OIt {
-        it = fmt::format_to(it, "{}", instruction.mnemonic);
-
-        const auto reg_name = true ? ::rv::register_name<true> : ::rv::register_name<false>;
-
-        if (instruction.mnemonic == "unknown") {
-            return it;
-        }
-
-        switch (instruction.format) {
-            case ::rv::opcode_format::reg_reg:  //
-                return fmt::format_to(it, " {}, {}, {}", reg_name(instruction.reg_dst()), reg_name(instruction.reg_src_1()), reg_name(instruction.reg_src_2()));
-            case ::rv::opcode_format::immediate:  //
-                return fmt::format_to(it, " {}, {}, {}", reg_name(instruction.reg_dst()), reg_name(instruction.reg_src_1()), static_cast<i32>(instruction.immediate()));
-            case ::rv::opcode_format::upper_immediate:  //
-                return fmt::format_to(it, " {}, {}", reg_name(instruction.reg_dst()), static_cast<i32>(rv::arith::sext<u32, 20>(instruction.upper_immediate() >> 12)));
-            case ::rv::opcode_format::jump:  //
-                return fmt::format_to(it, " {}, {}", reg_name(instruction.reg_dst()), static_cast<i32>(instruction.jump_offset()));
-            case ::rv::opcode_format::store:  //
-                return fmt::format_to(it, " {}, {}({})", reg_name(instruction.reg_src_2()), static_cast<i32>(instruction.store_offset()), reg_name(instruction.reg_src_1()));
-            case ::rv::opcode_format::branch:  //
-                return fmt::format_to(it, " {}, {}, {}", reg_name(instruction.reg_src_1()), reg_name(instruction.reg_src_2()), static_cast<i32>(instruction.branch_offset()));
-
-            case ::rv::opcode_format::c_reg_reg: [[fallthrough]];
-            case ::rv::opcode_format::c_immediate: [[fallthrough]];
-            case ::rv::opcode_format::c_wide_immediate: [[fallthrough]];
-            case ::rv::opcode_format::c_stack_rela_store: return it;
-        }
-
-        return it;
-    }
-};
-
-struct mnemonic_only_formatter {
-    template<typename OIt>
-    static constexpr auto format_to(instruction_descriptor const& instruction, OIt&& it) -> OIt {
-        const auto reg_name = true ? ::rv::register_name<true> : ::rv::register_name<false>;
-
-        return it = fmt::format_to(it, "{}", instruction.mnemonic);
-    }
-};
-
-struct imm_shift_formatter {
-    template<typename OIt>
-    static constexpr auto format_to(instruction_descriptor const& instruction, OIt&& it) -> OIt {
-        const auto reg_name = true ? ::rv::register_name<true> : ::rv::register_name<false>;
-
-        auto imm_to_print = static_cast<i32>(instruction.immediate());
-        if (instruction.mnemonic == "srai" || instruction.mnemonic == "srli" || instruction.mnemonic == "slli") {
-            imm_to_print &= 0b11'1111;
-        } else if (instruction.mnemonic == "sraiw" || instruction.mnemonic == "srliw" || instruction.mnemonic == "slliw") {
-            imm_to_print &= 0b1'1111;
-        }
-
-        return  //
-          it = fmt::format_to(it, "{} {}, {}, {}", instruction.mnemonic, reg_name(instruction.reg_dst()), reg_name(instruction.reg_src_1()), imm_to_print);
-    }
-};
-
-struct fence_formatter {
-    template<typename OIt>
-    static constexpr auto format_to(instruction_descriptor const& instruction, OIt&& it) -> OIt {
-        const u32 pred = (instruction.immediate() >> 4u) & 0xFu;
-        const u32 succ = (instruction.immediate()) & 0xFu;
-
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wc99-designator"
-        constexpr const char* iorw_lookup[16]{
-          [0b0000] = "invalid(0)", [0b0001] = "w",   [0b0010] = "r",   [0b0011] = "rw",    //
-          [0b0100] = "o",          [0b0101] = "ow",  [0b0110] = "or",  [0b0111] = "orw",   //
-          [0b1000] = "i",          [0b1001] = "iw",  [0b1010] = "ir",  [0b1011] = "irw",   //
-          [0b1100] = "io",         [0b1101] = "iow", [0b1110] = "ior", [0b1111] = "iorw",  //
-        };
-#pragma clang diagnostic pop
-
-        return it = fmt::format_to(it, "{} {}, {}", instruction.mnemonic, iorw_lookup[pred], iorw_lookup[succ]);
-    }
-};
-
-struct load_formatter {
-    template<typename OIt>
-    static constexpr auto format_to(instruction_descriptor const& instruction, OIt&& it) -> OIt {
-        const auto reg_name = true ? ::rv::register_name<true> : ::rv::register_name<false>;
-
-        return  //
-          it = fmt::format_to(
-            it, "{} {}, {}({})", instruction.mnemonic, reg_name(instruction.reg_dst()), static_cast<i32>(instruction.immediate()), reg_name(instruction.reg_src_1())
-          );
-    }
-};
-
-}  // namespace formatters
-
-namespace matchers {
 
 template<u32 Opcode>
     requires(Opcode < 0x80)
-using opcode_matcher = bit_matcher<u32, 0x0000'007Fu, Opcode>;
+inline constexpr bit_matcher<u32> opcode_matcher = bit_matcher<u32>{0x0000'007Fu, Opcode};
 
 template<u32 Funct3>
     requires(Funct3 < 8)
-using funct_3_matcher = bit_matcher<u32, 0x0000'7000u, Funct3 << 12>;
+inline constexpr bit_matcher<u32> funct_3_matcher = bit_matcher<u32>{0x0000'7000u, Funct3 << 12};
 
 template<u32 Funct7>
     requires(Funct7 < 0x80)
-using funct_7_matcher = bit_matcher<u32, 0xFE00'0000u, Funct7 << 25>;
+inline constexpr bit_matcher<u32> funct_7_matcher = bit_matcher<u32>{0xFE00'0000u, Funct7 << 25};
 
 //
 
 template<u32 Opcode>
-using uimm_matcher = opcode_matcher<Opcode>;
+inline constexpr bit_matcher<u32> uimm_matcher = opcode_matcher<Opcode>;
 
 template<u32 Opcode, u32 Funct3>
-using imm_matcher = typename opcode_matcher<Opcode>::template combine_with_t<funct_3_matcher<Funct3>>;
+inline constexpr bit_matcher<u32> imm_matcher = opcode_matcher<Opcode>.combine_with(funct_3_matcher<Funct3>);
 
 template<u32 Action>
-using alu_imm_matcher = imm_matcher<0b00100'11, Action>;
+inline constexpr bit_matcher<u32> alu_imm_matcher = imm_matcher<0b00100'11, Action>;
 
 template<u32 Action, u32 Funct7 = 0>
     requires(Action < 8)
-using alu_matcher = typename opcode_matcher<0b01100'11>::combine_with_t<funct_3_matcher<Action>>::template combine_with_t<funct_7_matcher<Funct7>>;
+inline constexpr bit_matcher<u32> alu_matcher = opcode_matcher<0b01100'11>.combine_with(funct_3_matcher<Action>).combine_with(funct_7_matcher<Funct7>);
 
 template<u32 Action>
-using aluw_imm_matcher = imm_matcher<0b00110'11, Action>;
+inline constexpr bit_matcher<u32> aluw_imm_matcher = imm_matcher<0b00110'11, Action>;
 
 template<u32 Action, u32 Funct7 = 0>
     requires(Action < 8)
-using aluw_matcher = typename opcode_matcher<0b01110'11>::combine_with_t<funct_3_matcher<Action>>::template combine_with_t<funct_7_matcher<Funct7>>;
-
-}  // namespace matchers
-
-using namespace formatters;
-using namespace matchers;
-
-template<usize StepSize = 4uz>
-struct functor_nop {
-    constexpr auto operator()(auto&, auto) -> usize { return StepSize; }
-};
-
-using functor_nyi = functor_nop<0uz>;
-
-template<
-  stf::string_literal Mnemonic,
-  enum instruction_standard Standard,
-  enum opcode_format Format,
-  typename Matcher,
-  typename Fn = functor_nyi,
-  typename Formatter = default_formatter>
-struct instruction_desc {
-    using formatter_type = Formatter;
-    using functor_type = Fn;
-    static constexpr auto mnemonic = Mnemonic;
-    static constexpr auto standard = Standard;
-    static constexpr auto format = Format;
-
-    static constexpr auto match(u32 instruction) -> bool { return Matcher::match(instruction); }
-};
+inline constexpr bit_matcher<u32> aluw_matcher = opcode_matcher<0b01110'11>.combine_with(funct_3_matcher<Action>).combine_with(funct_7_matcher<Funct7>);
 
 }  // namespace detail
+
+namespace detail {
+
+constexpr auto default_formatter(instruction_descriptor instruction, bool abi_registers = false) -> std::string {
+    auto str = std::string{};
+    auto it = std::back_inserter(str);
+    it = fmt::format_to(it, "{}", instruction.mnemonic);
+
+    const auto reg_name = abi_registers ? ::rv::register_name<true> : ::rv::register_name<false>;
+
+    if (instruction.mnemonic == "unknown") {
+        return str;
+    }
+
+    switch (instruction.format) {
+        case ::rv::opcode_format::reg_reg:  //
+            it = fmt::format_to(it, " {}, {}, {}", reg_name(instruction.reg_dst()), reg_name(instruction.reg_src_1()), reg_name(instruction.reg_src_2()));
+            break;
+        case ::rv::opcode_format::immediate:  //
+            it = fmt::format_to(it, " {}, {}, {}", reg_name(instruction.reg_dst()), reg_name(instruction.reg_src_1()), static_cast<i32>(instruction.immediate()));
+            break;
+        case ::rv::opcode_format::upper_immediate:  //
+            it = fmt::format_to(it, " {}, {}", reg_name(instruction.reg_dst()), static_cast<i32>(rv::arith::sext<u32, 20>(instruction.upper_immediate() >> 12)));
+            break;
+        case ::rv::opcode_format::jump:  //
+            it = fmt::format_to(it, " {}, {}", reg_name(instruction.reg_dst()), static_cast<i32>(instruction.jump_offset()));
+            break;
+        case ::rv::opcode_format::store:  //
+            it = fmt::format_to(it, " {}, {}({})", reg_name(instruction.reg_src_2()), static_cast<i32>(instruction.store_offset()), reg_name(instruction.reg_src_1()));
+            break;
+        case ::rv::opcode_format::branch:  //
+            it = fmt::format_to(it, " {}, {}, {}", reg_name(instruction.reg_src_1()), reg_name(instruction.reg_src_2()), static_cast<i32>(instruction.branch_offset()));
+            break;
+
+        case ::rv::opcode_format::c_reg_reg: [[fallthrough]];
+        case ::rv::opcode_format::c_immediate: [[fallthrough]];
+        case ::rv::opcode_format::c_wide_immediate: [[fallthrough]];
+        case ::rv::opcode_format::c_stack_rela_store: break;
+    }
+
+    return str;
+}
+
+constexpr auto mnemonic_only_formatter(instruction_descriptor instruction, bool abi_registers) -> std::string {
+    auto str = std::string{};
+    auto it = std::back_inserter(str);
+    const auto reg_name = abi_registers ? ::rv::register_name<true> : ::rv::register_name<false>;
+
+    it = fmt::format_to(it, "{}", instruction.mnemonic);
+
+    return str;
+}
+
+constexpr auto imm_shift_formatter(instruction_descriptor instruction, bool abi_registers) -> std::string {
+    auto str = std::string{};
+    auto it = std::back_inserter(str);
+    const auto reg_name = abi_registers ? ::rv::register_name<true> : ::rv::register_name<false>;
+
+    auto imm_to_print = static_cast<i32>(instruction.immediate());
+    if (instruction.mnemonic == "srai" || instruction.mnemonic == "srli" || instruction.mnemonic == "slli") {
+        imm_to_print &= 0b11'1111;
+    } else if (instruction.mnemonic == "sraiw" || instruction.mnemonic == "srliw" || instruction.mnemonic == "slliw") {
+        imm_to_print &= 0b1'1111;
+    }
+
+    it = fmt::format_to(it, "{} {}, {}, {}", instruction.mnemonic, reg_name(instruction.reg_dst()), reg_name(instruction.reg_src_1()), imm_to_print);
+
+    return str;
+}
+
+constexpr auto fence_formatter(instruction_descriptor instruction, bool abi_registers) -> std::string {
+    auto str = std::string{};
+    auto it = std::back_inserter(str);
+    const u32 pred = (instruction.immediate() >> 4u) & 0xFu;
+    const u32 succ = (instruction.immediate()) & 0xFu;
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wc99-designator"
+    constexpr const char* iorw_lookup[16]{
+      [0b0000] = "invalid(0)", [0b0001] = "w",   [0b0010] = "r",   [0b0011] = "rw",    //
+      [0b0100] = "o",          [0b0101] = "ow",  [0b0110] = "or",  [0b0111] = "orw",   //
+      [0b1000] = "i",          [0b1001] = "iw",  [0b1010] = "ir",  [0b1011] = "irw",   //
+      [0b1100] = "io",         [0b1101] = "iow", [0b1110] = "ior", [0b1111] = "iorw",  //
+    };
+#pragma clang diagnostic pop
+
+    it = fmt::format_to(it, "{} {}, {}", instruction.mnemonic, iorw_lookup[pred], iorw_lookup[succ]);
+
+    return str;
+}
+
+constexpr auto load_formatter(instruction_descriptor instruction, bool abi_registers) -> std::string {
+    auto str = std::string{};
+    auto it = std::back_inserter(str);
+    const auto reg_name = abi_registers ? ::rv::register_name<true> : ::rv::register_name<false>;
+
+    it = fmt::format_to(it, "{} {}, {}({})", instruction.mnemonic, reg_name(instruction.reg_dst()), static_cast<i32>(instruction.immediate()), reg_name(instruction.reg_src_1()));
+
+    return str;
+}
+
+}  // namespace detail
+
+template<typename RiscV>
+struct generic_instruction_set {
+    virtual constexpr ~generic_instruction_set() = default;
+
+    virtual constexpr auto operator[](size_t i) const -> instruction_properties<RiscV> const& = 0;
+    virtual constexpr auto operator[](size_t i) -> instruction_properties<RiscV>& = 0;
+
+    virtual constexpr auto match(u32 instruction_word) const -> std::optional<instruction_properties<RiscV>> = 0;
+    virtual auto format(u32 instruction_word, bool abi_register_names = false) const -> std::string = 0;
+    virtual constexpr auto get_descriptor_for(instruction_properties<RiscV> const& props, u32 instruction_word) -> instruction_descriptor = 0;
+
+    virtual constexpr void try_step(RiscV& self) const = 0;
+};
+
+template<typename RiscV, usize NumInstructions>
+struct instruction_set final : generic_instruction_set<RiscV> {
+    constexpr instruction_set() = default;
+
+    template<typename... Ts>
+    explicit constexpr instruction_set(std::type_identity<RiscV>, Ts&&... instructions) {
+        // std::copy(il.begin(), il.end(), m_instructions.begin());
+
+        instruction_properties<RiscV> arr[] = {instructions...};
+        std::copy(std::begin(arr), std::end(arr), m_instructions.begin());
+    }
+
+    template<usize LhsNumInsns, usize RhsNumInsns>
+    explicit constexpr instruction_set(instruction_set<RiscV, LhsNumInsns> const& lhs, instruction_set<RiscV, RhsNumInsns> const& rhs) {
+        std::copy_n(lhs.m_instructions.begin(), LhsNumInsns, m_instructions.begin());
+        std::copy_n(rhs.m_instructions.begin(), RhsNumInsns, m_instructions.begin() + LhsNumInsns);
+    }
+
+    constexpr auto operator[](size_t i) const -> instruction_properties<RiscV> const& { return m_instructions[i]; }
+    constexpr auto operator[](size_t i) -> instruction_properties<RiscV>& { return m_instructions[i]; }
+
+    constexpr auto match(u32 instruction_word) const -> std::optional<instruction_properties<RiscV>> {
+        auto it = std::find_if(m_instructions.begin(), m_instructions.end(), [instruction_word](auto const& insn_prop) { return insn_prop.matcher.match(instruction_word); });
+
+        if (it == m_instructions.end()) {
+            return std::nullopt;
+        }
+
+        return *it;
+    }
+
+    auto format(u32 instruction_word, bool abi_register_names = false) const -> std::string {
+        /*return match(instruction_word)  //
+          .transform([instruction_word, abi_register_names](auto const& insn_prop) {
+              return insn_prop.formatter(get_descriptor_for_impl(insn_prop, instruction_word), abi_register_names);
+          })  //
+          .value_or("unknown"s);*/
+
+        const auto res = match(instruction_word);
+        if (!res) {
+            return "unknown";
+        }
+
+        const auto desc = get_descriptor_for_impl(*res, instruction_word);
+
+        const auto formatted = (res->formatter)(desc, abi_register_names);
+
+        if (res->translator) {
+            const auto translated = (res->translator)(instruction_word);
+            return fmt::format("{} -> {}", formatted, format(translated, abi_register_names));
+        }
+
+        return formatted;
+    }
+
+    static constexpr auto get_descriptor_for_impl(instruction_properties<RiscV> const& props, u32 instruction_word) -> instruction_descriptor {
+        return {
+          .word = instruction_word,
+          .mnemonic = props.mnemonic,
+          .standard = props.standard,
+          .format = props.format,
+        };
+    }
+    constexpr auto get_descriptor_for(instruction_properties<RiscV> const& props, u32 instruction_word) -> instruction_descriptor {
+        return get_descriptor_for_impl(props, instruction_word);
+    }
+
+    constexpr void try_step(RiscV& self) const {
+        // spdlog::trace("stepping into address {:#08X}", self.m_program_counter);
+        const auto instruction_word = self.m_memory.template read<u32>(self.m_program_counter);
+        if ((instruction_word & 0b11) == 0b11) {
+            self.m_next_step_sz = 4;
+        } else {
+            self.m_next_step_sz = 2;
+        }
+
+        return try_execute(self, instruction_word);
+    }
+
+    constexpr void try_execute(RiscV& self, u32 instruction_word) const {
+        const auto res = match(instruction_word);
+
+        if (!res) {
+            self.m_next_step_sz = 0;
+            spdlog::warn("unknown instruction @ {:#010x}", self.m_program_counter);
+            return;
+        }
+
+        const auto desc = get_descriptor_for_impl(*res, instruction_word);
+
+        if (res->translator != nullptr) {
+            const auto translation = (res->translator)(instruction_word);
+            //const auto formatted = (res->formatter)(desc, true);
+            //spdlog::trace("@{:#010x}: {:#06x} ({}) translated into {:#010x}", self.m_program_counter, instruction_word & 0xFFFF, formatted, (u32)translation);
+            return try_execute(self, translation);
+        }
+
+        //spdlog::trace("@{:#010x}: executing {:#010x} ({})", self.m_program_counter, instruction_word, format(instruction_word, true));
+        (res->executor)(self, desc);
+        self.m_program_counter += self.m_next_step_sz;
+    }
+
+    std::array<instruction_properties<RiscV>, NumInstructions> m_instructions{};
+};
+
+template<typename RiscV, usize LhsNumInsns, usize RhsNumInsns>
+instruction_set(instruction_set<RiscV, LhsNumInsns> const&, instruction_set<RiscV, RhsNumInsns> const&) -> instruction_set<RiscV, LhsNumInsns + RhsNumInsns>;
+
+template<typename RiscV, typename... Ts>
+instruction_set(std::type_identity<RiscV>, Ts&&...) -> instruction_set<RiscV, sizeof...(Ts)>;
+
+template<typename Self>
+struct functor_nop {
+    constexpr auto operator()(Self& self, instruction_descriptor desc) {}
+};
+
+template<typename Self>
+struct functor_nyi {
+    constexpr auto operator()(Self& self, instruction_descriptor desc) { self.jump(0); }
+};
+
+template<typename Self, alu_action Act, bool Imm = true, bool Word = false>
+struct functor_alu {
+    constexpr void operator()(Self& self, instruction_descriptor desc) const {
+        using register_type = typename Self::register_type;
+
+        const auto op_1 = self.m_register_bank.read_register(desc.reg_src_1());
+        auto op_2 = Imm ? desc.immediate<register_type>() : self.m_register_bank.read_register(desc.reg_src_2());
+
+        if constexpr (Act == alu_action::sra || Act == alu_action::srl || Act == alu_action::sll) {
+            if constexpr (std::is_same_v<typename Self::register_type, u32>) {
+                op_2 &= 0x1Fu;
+            } else {
+                op_2 &= 0x3Fu;
+            }
+        }
+
+        auto res = impl<register_type>(op_1, op_2);
+
+        if constexpr (Word) {
+            res = arith::sext<register_type, 32>((register_type)(u32)res);
+        }
+
+        self.m_register_bank.write_register(desc.reg_dst(), res);
+    }
+
+private:
+    template<std::unsigned_integral T>
+    static constexpr auto impl(T a, T b) -> T {
+        switch (Act) {
+            case alu_action::add: return a + b;
+            case alu_action::sub: return a - b;
+            case alu_action::sll: return a << b;
+            case alu_action::srl: return a >> b;
+            case alu_action::sra: return arith::arithmetic_shr(a, b);
+            case alu_action::slt: return arith::signed_compare(a, b) == std::strong_ordering::less ? 1u : 0u;
+            case alu_action::sltu: return a < b ? 1u : 0u;
+            case alu_action::bxor: return a ^ b;
+            case alu_action::bor: return a | b;
+            case alu_action::band: return a & b;
+
+            case alu_action::mul: return arith::multiply<T, false, false>(a, b).second;
+            case alu_action::mulhuu: return arith::multiply<T, false, false>(a, b).first;
+            case alu_action::mulhsu: return arith::multiply<T, true, false>(a, b).first;
+            case alu_action::mulhss: return arith::multiply<T, true, true>(a, b).first;
+            case alu_action::div: return (T)((std::make_signed_t<T>)a / (std::make_signed_t<T>)b);  // TODO
+            case alu_action::divu: return a / b;
+            case alu_action::rem: return (T)((std::make_signed_t<T>)a % (std::make_signed_t<T>)b);  // TODO
+            case alu_action::remu: return a % b;
+        }
+    }
+};
+
+template<typename Self, std::unsigned_integral StoreAs>
+struct functor_store {
+    constexpr auto operator()(Self& self, instruction_descriptor desc) {
+        const auto reg_src_1 = self.m_register_bank.read_register(desc.reg_src_1());
+        const auto reg_src_2 = self.m_register_bank.read_register(desc.reg_src_2());
+        self.m_memory.template write<StoreAs>(reg_src_1 + desc.store_offset<typename Self::register_type>(), (StoreAs)reg_src_2);
+    }
+};
+
+template<typename Self, std::unsigned_integral LoadAs>
+struct functor_load {
+    constexpr auto operator()(Self& self, instruction_descriptor desc) {
+        using register_type = typename Self::register_type;
+
+        const auto reg_src_1 = self.m_register_bank.read_register(desc.reg_src_1());
+        const auto immediate = desc.immediate<u64>();
+        const auto addr = reg_src_1 + immediate;
+        const auto res = arith::sext<register_type, sizeof(LoadAs) * 8>((register_type)self.m_memory.template read<LoadAs>(addr));
+        self.m_register_bank.write_register(desc.reg_dst(), res);
+    }
+};
+
+template<typename Self, std::unsigned_integral LoadAs>
+struct functor_load_unsigned {
+    constexpr auto operator()(Self& self, instruction_descriptor desc) {
+        using register_type = typename Self::register_type;
+
+        const auto reg_src_1 = self.m_register_bank.read_register(desc.reg_src_1());
+        const auto immediate = desc.immediate<register_type>();
+        self.m_register_bank.write_register(desc.reg_dst(), (register_type)self.m_memory.template read<u8>(reg_src_1 + immediate));
+    }
+};
+
+template<typename Self, typename Predicate>
+struct functor_branch {
+    constexpr auto operator()(Self& self, instruction_descriptor desc) {
+        using register_type = typename Self::register_type;
+
+        const auto reg_src_1 = self.m_register_bank.read_register(desc.reg_src_1());
+        const auto reg_src_2 = self.m_register_bank.read_register(desc.reg_src_2());
+
+        if (std::invoke(Predicate{}, reg_src_1, reg_src_2)) {
+            self.jump(desc.branch_offset<register_type>());
+        }
+    }
+};
 
 }  // namespace rv
 
@@ -397,58 +556,12 @@ struct instruction_desc {
 
 namespace rv {
 
-namespace detail {
+template<typename RiscV>
+inline constexpr auto is_rv32i =
+  instruction_set(instruction_set(instruction_set(instruction_set(detail::is_rv32i<RiscV>, detail::is_rv32m<RiscV>), detail::is_rv32zifencei<RiscV>), detail::is_rv32zicsr<RiscV>), detail::is_rv32c<RiscV>);
 
-using is_rv32imc_zifencei_zicsr = is_rv32i::combine_with<is_rv32m>::combine_with<is_rv32c>::combine_with<is_rv32zifencei>::combine_with<is_rv32zicsr>;
-using is_rv64imc_zifencei_zicsr = is_rv64i::combine_with<is_rv64m>::combine_with<is_rv64c>::combine_with<is_rv32zifencei>::combine_with<is_rv32zicsr>;
-
-}  // namespace detail
-
-using isa_type_32 = detail::is_rv32imc_zifencei_zicsr;
-using isa_type_64 = detail::is_rv64imc_zifencei_zicsr;
-
-template<typename... InstDefs>
-template<typename Self>
-constexpr auto instruction_set<InstDefs...>::try_step(Self& self) -> stf::expected<void, std::string_view> {
-    // spdlog::trace("stepping into address {:#08X}", self.m_program_counter);
-    const auto instruction_word = self.m_memory.template read<u32>(self.m_program_counter);
-    if ((instruction_word & 0b11) == 0b11) {
-        self.m_next_step_sz = 4;
-    } else {
-        self.m_next_step_sz = 2;
-    }
-
-    return try_execute(self, instruction_word);
-}
-
-template<typename... InstDefs>
-template<typename Self>
-constexpr auto instruction_set<InstDefs...>::try_execute(Self& self, u32 instruction_word, std::optional<typename Self::register_type> forced_step_sz)
-  -> stf::expected<void, std::string_view> {
-    auto ret = stf::expected<void, std::string_view>{};
-
-    find_description<0>(instruction_word, [instruction_word, &forced_step_sz, &ret, &self]<typename Desc>(std::type_identity<Desc>) {
-        const auto desc = get_descriptor<Desc>(instruction_word);
-
-        constexpr bool is_translator = requires { Desc::functor_type::get_translation(instruction_word); };
-
-        if constexpr (is_translator) {
-            const auto translation = Desc::functor_type::get_translation(instruction_word);
-
-            using Formatter = typename Desc::formatter_type;
-            std::string formatted;
-            Formatter::format_to(desc, std::back_inserter(formatted));
-
-            spdlog::trace("@{:#010x}: {:#06x} ({}) translated into {:#010x}", self.m_program_counter, instruction_word & 0xFFFF, formatted, (u32)translation);
-            return try_execute<Self>(self, translation/*, Desc::functor_type::step_sz(self, desc)*/);
-        } else {
-            spdlog::trace("@{:#010x}: executing {:#010x} ({})", self.m_program_counter, instruction_word, format(instruction_word));
-            const auto req_step_sz = std::invoke(typename Desc::functor_type{}, self, desc);
-            self.m_program_counter += forced_step_sz ? *forced_step_sz : req_step_sz;
-        }
-    });
-
-    return ret;
-}
+template<typename RiscV>
+inline constexpr auto is_rv64i =
+  instruction_set(instruction_set(instruction_set(instruction_set(detail::is_rv64i<RiscV>, detail::is_rv64m<RiscV>), detail::is_rv32zifencei<RiscV>), detail::is_rv32zicsr<RiscV>), detail::is_rv64c<RiscV>);
 
 }  // namespace rv

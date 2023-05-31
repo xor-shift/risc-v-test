@@ -5,18 +5,21 @@
 
 namespace rv {
 
+template<typename RiscV>
+struct generic_instruction_set;
+
 enum class csr_write_type {
     write,
     set,
     clear,
-}
+};
 
-template<typename RegisterType, typename ISA, typename Allocator = std::allocator<u8>>
+template<typename RegisterType, typename Allocator = std::allocator<u8>>
 struct risc_v {
     using register_type = RegisterType;
     using float_type = RegisterType;
 
-    constexpr risc_v(usize ram_sz = 0x1'0000, Allocator const& allocator = Allocator());
+    constexpr risc_v(generic_instruction_set<risc_v<RegisterType, Allocator>> const& isa, usize ram_sz = 0x1'0000, Allocator const& allocator = Allocator());
 
     constexpr void reset();
 
@@ -37,10 +40,20 @@ struct risc_v {
 
     template<csr_write_type Type>
     constexpr auto csr_read_write(reg destination, register_type value, u32 addr) {
-        auto val = m_register_bank.read_register(src);
+        //auto val = m_register_bank.read_register(src);
         //
     }
 
+    constexpr auto jump(register_type offset) {
+        m_next_step_sz = offset;
+    }
+
+    constexpr auto jump_to(register_type to) {
+        m_program_counter = to;
+        m_next_step_sz = 0;
+    }
+
+    generic_instruction_set<risc_v<RegisterType, Allocator>> const& m_isa;
     register_bank<register_type> m_register_bank;
     rv::memory<register_type, Allocator> m_memory;
     register_type m_program_counter = 0;

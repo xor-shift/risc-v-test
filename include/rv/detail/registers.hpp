@@ -12,11 +12,12 @@ struct register_bank {
     using float_type = RegisterType;
 
     constexpr register_bank() {
-        auto gen = detail::prepare_rng();
-        auto dist = std::uniform_int_distribution<register_type>{};
-        for (auto& reg : m_registers) {
-            reg = dist(gen);
-            // reg = 0;
+        if consteval {
+            std::fill(std::begin(m_registers), std::end(m_registers), 0);
+        } else {
+            auto gen = detail::prepare_rng();
+            auto dist = std::uniform_int_distribution<register_type>{};
+            std::generate(std::begin(m_registers), std::end(m_registers), [&dist, &gen] { return dist(gen); });
         }
     }
 

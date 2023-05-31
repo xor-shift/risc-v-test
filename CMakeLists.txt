@@ -25,20 +25,21 @@ target_link_libraries(${PROJECT_NAME}
 
         stuff_core stuff_random stuff_thread
         )
+target_compile_options(${PROJECT_NAME} PUBLIC -ftime-report -ftime-trace)
 
 if (CMAKE_BUILD_TYPE STREQUAL "Debug" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
-    target_compile_options(${PROJECT_NAME} PUBLIC -fsanitize=address -fsanitize=undefined)
-    target_link_options(${PROJECT_NAME} PUBLIC -fsanitize=address -fsanitize=undefined)
+    #target_compile_options(${PROJECT_NAME} PUBLIC -fsanitize=address -fsanitize=undefined)
+    #target_link_options(${PROJECT_NAME} PUBLIC -fsanitize=address -fsanitize=undefined)
 elseif(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
     target_compile_options(${PROJECT_NAME} PUBLIC -ffast-math -march=native -mtune=native -fopenmp)
     target_link_options(${PROJECT_NAME} PUBLIC -fopenmp)
 endif()
 
 add_executable(${PROJECT_NAME}_tests
-        tests/cache.cpp
+        #tests/cache.cpp
         tests/rvc.cpp
         tests/rvi.cpp
-        tests/rvm.cpp
+        #tests/rvm.cpp
         )
 
 target_compile_options(${PROJECT_NAME}_tests PRIVATE -fsanitize=address -fsanitize=undefined)

@@ -4,7 +4,7 @@
 
 #include <rv/rv.hpp>
 
-TEST(RV_DECODE, RV64I) {
+TEST(rv_decode, rv32i_rv64i) {
     // clang-format off
     static constexpr std::pair<u32, std::string_view> test_cases[]{
       {0x00000037u, "lui x0, 0"},        {0xffffffb7u, "lui x31, -1"},       {0xffffefb7u, "lui x31, -2"},
@@ -55,7 +55,12 @@ TEST(RV_DECODE, RV64I) {
     };
     // clang-format on
 
-    run_tests<rv::detail::is_rv64i>({test_cases}, false);
+    run_tests({test_cases}, rv::detail::is_rv32i<rv::risc_v<u32>>, false);
+    run_tests({test_cases}, rv::detail::is_rv32i<rv::risc_v<u64>>, false);
+    run_tests({test_cases}, rv::detail::is_rv64i<rv::risc_v<u32>>, false);
+    run_tests({test_cases}, rv::detail::is_rv64i<rv::risc_v<u64>>, false);
+    run_tests({test_cases}, rv::is_rv32i<rv::risc_v<u32>>, false);
+    run_tests({test_cases}, rv::is_rv64i<rv::risc_v<u64>>, false);
 }
 
 TEST(rv_decode, rv32zifencei) {
@@ -63,7 +68,8 @@ TEST(rv_decode, rv32zifencei) {
       {0x0000100fu, "fence.i"},
     };
 
-    run_tests<rv::detail::is_rv32zifencei>({test_cases}, false);
+    run_tests({test_cases}, rv::detail::is_rv32zifencei<rv::risc_v<u32>>, false);
+    run_tests({test_cases}, rv::detail::is_rv32zifencei<rv::risc_v<u64>>, false);
 }
 
 TEST(rv_decode, rv32zicsr) {

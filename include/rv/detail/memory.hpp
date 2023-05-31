@@ -141,10 +141,14 @@ struct memory {
         : m_allocator(allocator)
         , m_memory_size((usize)ram_sz)
         , m_memory(m_allocator.allocate(ram_sz)) {
-        auto gen = detail::prepare_rng();
-        auto dist_memory = std::uniform_int_distribution<u8>{};
-        for (usize i = 0; i < ram_sz; i++) {
-            m_memory[i] = dist_memory(gen);
+        if consteval {
+            for (usize i = 0; i < m_memory_size; i++) {
+                std::construct_at(m_memory + i, 0);
+            }
+        } else {
+            auto gen = detail::prepare_rng();
+            auto dist = std::uniform_int_distribution<u8>{};
+            std::generate(m_memory, m_memory + m_memory_size, [&dist, &gen] { return dist(gen); });
         }
     }
 

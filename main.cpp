@@ -78,7 +78,8 @@ struct averager {
         m_average_invalid = true;
         m_stdev_invalid = true;
 
-        m_data[m_data_ptr++ % m_data.size()] = v; }
+        m_data[m_data_ptr++ % m_data.size()] = v;
+    }
 
 private:
     std::vector<T> m_data;
@@ -184,13 +185,13 @@ struct program {
                             ImGui::TableNextColumn();
                             ImGui::TextUnformatted("next instruction (RV32)");
                             ImGui::TableNextColumn();
-                            ImGui::TextUnformatted(rv::isa_type_32::format(next_instruction_word).c_str());
+                            ImGui::TextUnformatted(rv::is_rv64i<rv::risc_v<u64>>.format(next_instruction_word).c_str());
 
                             ImGui::TableNextRow();
                             ImGui::TableNextColumn();
                             ImGui::TextUnformatted("next instruction (RV64)");
                             ImGui::TableNextColumn();
-                            ImGui::TextUnformatted(rv::isa_type_64::format(next_instruction_word).c_str());
+                            ImGui::TextUnformatted(rv::is_rv64i<rv::risc_v<u64>>.format(next_instruction_word).c_str());
 
                             ImGui::EndTable();
 
@@ -275,7 +276,7 @@ private:
     ImFontConfig m_font_config{};
 
     averager<double> m_ips_averager{4096};
-    rv::risc_v<u64, rv::isa_type_64> m_risc_v{};
+    rv::risc_v<u64> m_risc_v{rv::is_rv64i<rv::risc_v<u64>>, 0x1'0000, {}};
     usize m_amt_steps = 0;
     MemoryEditor m_memory_editor{};
 
@@ -296,7 +297,7 @@ private:
                 break;
             }
 
-            constexpr auto step_batch_amt = 16uz;
+            constexpr auto step_batch_amt = 32uz;
 
             const auto batch_count = request.amt_steps / step_batch_amt;
             const auto batch_excess = request.amt_steps % step_batch_amt;

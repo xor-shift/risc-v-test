@@ -153,4 +153,29 @@ constexpr auto enum_name(float_reg reg) -> std::string_view {
     return names[static_cast<usize>(reg)][ABI];
 }
 
+enum class alu_action {
+    add,
+    sub,
+
+    sll,
+    srl,
+    sra,
+
+    slt,
+    sltu,
+
+    bxor,
+    bor,
+    band,
+
+    mul,
+    mulhuu,
+    mulhsu,
+    mulhss,
+    div,
+    divu,
+    rem,
+    remu,
+};
+
 }  // namespace rv

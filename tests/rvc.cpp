@@ -4,7 +4,7 @@
 
 #include <rv/rv.hpp>
 
-TEST(RV_DECODE, RV32C) {
+TEST(rv_decode, rv32c) {
     // clang-format off
     static std::pair<u32, std::string_view> rv32c_test_cases[] {
         // quadrant 0
@@ -177,10 +177,10 @@ TEST(RV_DECODE, RV32C) {
     };
     // clang-format on
 
-    run_tests<rv::detail::is_rv32c>({rv32c_test_cases}, false);
+    run_tests({rv32c_test_cases}, rv::detail::is_rv32c<rv::risc_v<u32>>, false);
 }
 
-TEST(RV_DECODE, RV64C) {
+TEST(rv_decode, rv64c) {
     // clang-format off
     static std::pair<u32, std::string_view> rv64c_test_cases[] {
       {0b011'000'000'00'000'00, "c.ld"}, // overrides c.flw (RV32C)
@@ -229,10 +229,10 @@ TEST(RV_DECODE, RV64C) {
     };
     // clang-format on
 
-    run_tests<rv::detail::is_rv64c>({rv64c_test_cases}, false);
+    run_tests({rv64c_test_cases}, rv::detail::is_rv64c<rv::risc_v<u64>>, false);
 }
 
-TEST(RV_DECODE, RV128C) {
+TEST(rv_decode, rv128c) {
     // clang-format off
     static std::pair<u32, std::string_view> rv128c_test_cases[] {
         {0b001'000'000'00'000'00, "c.lq"}, // overrides c.fld (RV32C, RV64C)
@@ -267,5 +267,6 @@ TEST(RV_DECODE, RV128C) {
     };
     // clang-format on
 
-    run_tests<rv::detail::is_rv128c>({rv128c_test_cases}, false);
+    run_tests({rv128c_test_cases}, rv::detail::is_rv128c<rv::risc_v<u128>>, false);
 }
+
