@@ -338,11 +338,19 @@ struct instruction_set final : generic_instruction_set<RiscV> {
         std::copy(std::begin(arr), std::end(arr), m_instructions.begin());
     }
 
+    template<typename T, typename... Ts>
+        requires(!std::is_same_v<std::remove_cvref_t<T>, instruction_properties<RiscV>>)
+    explicit constexpr instruction_set(std::type_identity<RiscV>, T&& v, Ts&&... vs) {
+        combine_helper<0, T, Ts...>(std::forward<T>(v), std::forward<Ts>(vs)...);
+    }
+
     template<usize LhsNumInsns, usize RhsNumInsns>
     explicit constexpr instruction_set(instruction_set<RiscV, LhsNumInsns> const& lhs, instruction_set<RiscV, RhsNumInsns> const& rhs) {
         std::copy_n(lhs.m_instructions.begin(), LhsNumInsns, m_instructions.begin());
         std::copy_n(rhs.m_instructions.begin(), RhsNumInsns, m_instructions.begin() + LhsNumInsns);
     }
+
+    static constexpr auto size() -> usize { return NumInstructions; }
 
     constexpr auto operator[](size_t i) const -> instruction_properties<RiscV> const& { return m_instructions[i]; }
     constexpr auto operator[](size_t i) -> instruction_properties<RiscV>& { return m_instructions[i]; }
@@ -418,21 +426,37 @@ struct instruction_set final : generic_instruction_set<RiscV> {
 
         if (res->translator != nullptr) {
             const auto translation = (res->translator)(instruction_word);
-            //const auto formatted = (res->formatter)(desc, true);
-            //spdlog::trace("@{:#010x}: {:#06x} ({}) translated into {:#010x}", self.m_program_counter, instruction_word & 0xFFFF, formatted, (u32)translation);
+            // const auto formatted = (res->formatter)(desc, true);
+            // spdlog::trace("@{:#010x}: {:#06x} ({}) translated into {:#010x}", self.m_program_counter, instruction_word & 0xFFFF, formatted, (u32)translation);
             return try_execute(self, translation);
         }
 
-        //spdlog::trace("@{:#010x}: executing {:#010x} ({})", self.m_program_counter, instruction_word, format(instruction_word, true));
+        // spdlog::trace("@{:#010x}: executing {:#010x} ({})", self.m_program_counter, instruction_word, format(instruction_word, true));
         (res->executor)(self, desc);
         self.m_program_counter += self.m_next_step_sz;
     }
 
     std::array<instruction_properties<RiscV>, NumInstructions> m_instructions{};
+
+private:
+    template<usize CurIdx = 0, typename T, typename... Ts>
+    constexpr void combine_helper(T&& cur, Ts&&... rest) {
+        constexpr auto cur_sz = std::remove_cvref_t<T>::size();
+
+        std::copy_n(cur.m_instructions.begin(), cur_sz, m_instructions.begin() + CurIdx);
+
+        if constexpr (sizeof...(Ts) != 0) {
+            return combine_helper<CurIdx + cur_sz>(std::forward<Ts>(rest)...);
+        }
+    }
 };
 
 template<typename RiscV, usize LhsNumInsns, usize RhsNumInsns>
 instruction_set(instruction_set<RiscV, LhsNumInsns> const&, instruction_set<RiscV, RhsNumInsns> const&) -> instruction_set<RiscV, LhsNumInsns + RhsNumInsns>;
+
+template<typename RiscV, typename T, typename... Ts>
+    requires(!std::is_same_v<std::remove_cvref_t<T>, instruction_properties<RiscV>>)
+instruction_set(std::type_identity<RiscV>, T&&, Ts&&...) -> instruction_set<RiscV, (std::remove_cvref_t<T>::size() + ... + std::remove_cvref_t<Ts>::size())>;
 
 template<typename RiscV, typename... Ts>
 instruction_set(std::type_identity<RiscV>, Ts&&...) -> instruction_set<RiscV, sizeof...(Ts)>;
@@ -552,16 +576,18 @@ struct functor_branch {
 #include <rv/detail/instructions/rv64i.ipp>
 #include <rv/detail/instructions/rv64m.ipp>
 
+#include <rv/detail/instructions/rv64a.ipp>
+
 #include <rv/detail/instructions/rv128c.ipp>
 
 namespace rv {
 
 template<typename RiscV>
-inline constexpr auto is_rv32i =
-  instruction_set(instruction_set(instruction_set(instruction_set(detail::is_rv32i<RiscV>, detail::is_rv32m<RiscV>), detail::is_rv32zifencei<RiscV>), detail::is_rv32zicsr<RiscV>), detail::is_rv32c<RiscV>);
+inline constexpr auto is_rv32 =
+  instruction_set(std::type_identity<RiscV>{}, detail::is_rv32i<RiscV>, detail::is_rv32m<RiscV>, detail::is_rv32zifencei<RiscV>, detail::is_rv32zicsr<RiscV>, detail::is_rv32c<RiscV>, detail::is_rv32a<RiscV>);
 
 template<typename RiscV>
-inline constexpr auto is_rv64i =
-  instruction_set(instruction_set(instruction_set(instruction_set(detail::is_rv64i<RiscV>, detail::is_rv64m<RiscV>), detail::is_rv32zifencei<RiscV>), detail::is_rv32zicsr<RiscV>), detail::is_rv64c<RiscV>);
+inline constexpr auto is_rv64 =
+  instruction_set(std::type_identity<RiscV>{}, detail::is_rv64i<RiscV>, detail::is_rv64m<RiscV>, detail::is_rv32zifencei<RiscV>, detail::is_rv32zicsr<RiscV>, detail::is_rv64c<RiscV>, detail::is_rv64a<RiscV>);
 
 }  // namespace rv

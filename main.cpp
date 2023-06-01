@@ -134,34 +134,24 @@ struct program {
                 ImGui::TableNextRow();
 
                 ImGui::TableNextColumn();
-                {
-                    auto group_guard = rv::imgui::guarded_group();
-
+                imgui::group([this] {
                     if (ImGui::BeginTabBar("LHSTabBar")) {
                         if (ImGui::BeginTabItem("Control and State")) {
-                            if (ImGui::Button("Run")) {
-                                stf::send(m_request_channel, processor_request{.run = true});
-                            }
+                            imgui::button("Run", ImVec2(0, 0), [this] { stf::send(m_request_channel, processor_request{.run = true}); });
                             ImGui::SameLine();
-                            if (ImGui::Button("Stop")) {
-                                stf::send(m_request_channel, processor_request{.run = false});
-                            }
+                            imgui::button("Stop", ImVec2(0, 0), [this] { stf::send(m_request_channel, processor_request{.run = false}); });
                             ImGui::SameLine();
-                            if (ImGui::Button("Step")) {
-                                stf::send(m_request_channel, processor_request{.run = false, .amt_steps = 1});
-                            }
+                            imgui::button("Step", ImVec2(0, 0), [this] { stf::send(m_request_channel, processor_request{.run = false, .amt_steps = 1}); });
                             ImGui::SameLine();
                             ImGui::Button("Reset");
 
-                            rv::imgui::input_scalar("Amt Steps", m_amt_steps);
+                            imgui::input_scalar("Amt Steps", m_amt_steps);
                             ImGui::SameLine();
-                            if (ImGui::Button("Run For")) {
-                                stf::send(m_request_channel, processor_request{.run = false, .amt_steps = m_amt_steps});
-                            }
+                            imgui::button("Run For", ImVec2(0, 0), [this] { stf::send(m_request_channel, processor_request{.run = false, .amt_steps = m_amt_steps}); });
 
-                            ImGui::TextUnformatted(fmt::format("Instructions per Second: {:.2f}", m_ips_averager.average()).c_str());
-                            ImGui::TextUnformatted(fmt::format("Instructions per Second (95th): {:.2f}", m_ips_averager.percentile_95()).c_str());
-                            ImGui::TextUnformatted(fmt::format("Instructions per Second (99th): {:.2f}", m_ips_averager.percentile_99()).c_str());
+                            imgui::text("Instructions per Second: {:.2f}", m_ips_averager.average());
+                            imgui::text("Instructions per Second (95th): {:.2f}", m_ips_averager.percentile_95());
+                            imgui::text("Instructions per Second (99th): {:.2f}", m_ips_averager.percentile_99());
 
                             ImGui::BeginTable(
                               "##control_brief_info_table", 2, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_BordersV | ImGuiTableFlags_BordersH | ImGuiTableFlags_RowBg
@@ -169,37 +159,33 @@ struct program {
 
                             ImGui::TableNextRow();
                             ImGui::TableNextColumn();
-                            ImGui::TextUnformatted("PC");
+                            imgui::text("PC");
                             ImGui::TableNextColumn();
-                            ImGui::TextUnformatted(fmt::format("{:016X}", m_risc_v.program_counter()).c_str());
+                            imgui::text("{:016X}", m_risc_v.program_counter());
 
                             const auto next_instruction_word = m_risc_v.memory().read<u32>(m_risc_v.program_counter());
 
                             ImGui::TableNextRow();
                             ImGui::TableNextColumn();
-                            ImGui::TextUnformatted("next instruction word");
+                            imgui::text("next instruction word");
                             ImGui::TableNextColumn();
-                            ImGui::TextUnformatted(fmt::format("{:08X}", next_instruction_word).c_str());
+                            imgui::text("{:08X}", next_instruction_word);
 
                             ImGui::TableNextRow();
                             ImGui::TableNextColumn();
-                            ImGui::TextUnformatted("next instruction (RV32)");
+                            imgui::text("next instruction (RV32)");
                             ImGui::TableNextColumn();
-                            ImGui::TextUnformatted(rv::is_rv64i<rv::risc_v<u64>>.format(next_instruction_word).c_str());
+                            imgui::text(rv::is_rv32<rv::risc_v<u32>>.format(next_instruction_word).c_str());
 
                             ImGui::TableNextRow();
                             ImGui::TableNextColumn();
-                            ImGui::TextUnformatted("next instruction (RV64)");
+                            imgui::text("next instruction (RV64)");
                             ImGui::TableNextColumn();
-                            ImGui::TextUnformatted(rv::is_rv64i<rv::risc_v<u64>>.format(next_instruction_word).c_str());
+                            imgui::text(rv::is_rv64<rv::risc_v<u64>>.format(next_instruction_word).c_str());
 
                             ImGui::EndTable();
 
-                            ImGui::BeginTable(
-                              "##state_table", 5,
-                              ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_BordersV | ImGuiTableFlags_BordersH | ImGuiTableFlags_RowBg  //,
-                              // ImGui::GetContentRegionAvail()
-                            );
+                            ImGui::BeginTable("##state_table", 4, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_BordersV | ImGuiTableFlags_BordersH | ImGuiTableFlags_RowBg);
 
                             for (u32 i = 0; i < 16; i++) {
                                 ImGui::TableNextRow();
@@ -207,18 +193,16 @@ struct program {
                                 const auto reg_0 = static_cast<rv::reg>(i);
 
                                 ImGui::TableNextColumn();
-                                ImGui::TextUnformatted(fmt::format("{}({})", rv::register_name<false>(reg_0), rv::register_name<true>(reg_0)).c_str());
+                                imgui::text("{}({})", rv::register_name<false>(reg_0), rv::register_name<true>(reg_0));
                                 ImGui::TableNextColumn();
-                                ImGui::TextUnformatted(fmt::format("{:016X}", m_risc_v.read_register(reg_0)).c_str());
-
-                                ImGui::TableNextColumn();
+                                imgui::text("{:016X}", m_risc_v.read_register(reg_0));
 
                                 const auto reg_1 = static_cast<rv::reg>(i + 16);
 
                                 ImGui::TableNextColumn();
-                                ImGui::TextUnformatted(fmt::format("{}({})", rv::register_name<false>(reg_1), rv::register_name<true>(reg_1)).c_str());
+                                imgui::text("{}({})", rv::register_name<false>(reg_1), rv::register_name<true>(reg_1));
                                 ImGui::TableNextColumn();
-                                ImGui::TextUnformatted(fmt::format("{:016X}", m_risc_v.read_register(reg_1)).c_str());
+                                imgui::text("{:016X}", m_risc_v.read_register(reg_1));
                             }
 
                             ImGui::EndTable();
@@ -227,21 +211,19 @@ struct program {
                         }
 
                         if (ImGui::BeginTabItem("Logs")) {
-                            ImGui::Text("NYI");
+                            imgui::text("NYI");
                             ImGui::EndTabItem();
                         }
 
                         ImGui::EndTabBar();
                     }
-                }
+                });
 
                 ImGui::TableNextColumn();
-                ImGui::Text("the TTY will be here");
+                imgui::text("the TTY will be here");
 
                 ImGui::TableNextColumn();
-                {
-                    auto group_guard = rv::imgui::guarded_group();
-
+                imgui::group([this] {
                     if (ImGui::BeginTabBar("RHSTabBar")) {
                         if (ImGui::BeginTabItem("Memory Editor")) {
                             m_memory_editor.DrawContents(m_risc_v.memory().data(), m_risc_v.memory().size());
@@ -254,7 +236,7 @@ struct program {
 
                         ImGui::EndTabBar();
                     }
-                }
+                });
                 ImGui::EndTable();
             }
             ImGui::End();
@@ -276,7 +258,7 @@ private:
     ImFontConfig m_font_config{};
 
     averager<double> m_ips_averager{4096};
-    rv::risc_v<u64> m_risc_v{rv::is_rv64i<rv::risc_v<u64>>, 0x1'0000, {}};
+    rv::risc_v<u64> m_risc_v{rv::is_rv64<rv::risc_v<u64>>, 0x4'0000, {}};
     usize m_amt_steps = 0;
     MemoryEditor m_memory_editor{};
 
@@ -367,27 +349,22 @@ private:
         }
 
         auto popup_about = false;
-        auto popup_save_as = false;
 
         const auto center = ImGui::GetMainViewport()->GetCenter();
 
-        if (ImGui::MenuItem("About")) {
+        imgui::menu_item("About", [&popup_about] {
             popup_about = true;
-        }
+        });
 
-        if (ImGui::BeginMenu("File")) {
-            if (ImGui::BeginMenu("UI Font...")) {
+        imgui::menu("File", [this] {
+            imgui::menu("UI Font...", [this] {
                 for (auto const& [name, font] : m_fonts) {
-                    if (ImGui::MenuItem(name.c_str())) {
+                    imgui::menu_item(name.c_str(), [this, &font = font] {
                         m_font = font;
-                    }
+                    });
                 }
-
-                ImGui::EndMenu();
-            }
-
-            ImGui::EndMenu();
-        }
+            });
+        });
 
         ImGui::EndMenuBar();
 
@@ -397,12 +374,12 @@ private:
         }
 
         if (ImGui::BeginPopupModal("About", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
-            ImGui::Text("");
+            imgui::text("");
             ImGui::Separator();
 
-            if (ImGui::Button("OK", ImVec2(120, 0))) {
+            imgui::button("OK", ImVec2(120, 0), [] {
                 ImGui::CloseCurrentPopup();
-            }
+            });
             ImGui::SetItemDefaultFocus();
 
             ImGui::EndPopup();

@@ -165,14 +165,24 @@ struct memory {
     }
 
     auto load_from(std::basic_istream<char>& input_stream, infmt_ihex_tag, usize offset = 0) -> stf::expected<void, std::string_view> {
+        u32 base_address = 0;
+
         for (std::string str_raw; std::getline(input_stream, str_raw);) {
             std::string_view record_line = str_raw;
             auto record = TRYX(detail::intel_hex_record::from_line(record_line));
 
-            if (record.record_type == detail::intel_hex_record::record_type::data) {
-                for (usize i = 0; i < record.byte_count; i++) {
-                    m_memory[record.address + i] = record.consume_byte();
-                }
+            switch (record.record_type) {
+                case detail::intel_hex_record::record_type::data:
+                    for (usize i = 0; i < record.byte_count; i++) {
+                        m_memory[record.address + i + base_address] = record.consume_byte();
+                    }
+                    break;
+                case detail::intel_hex_record::record_type::extended_segment_address:
+                    base_address = record.consume_byte() << 8;
+                    base_address |= record.consume_byte();
+                    base_address *= 16;
+                    break;
+                default: return stf::unexpected { "unhandled record type" };
             }
         }
 
@@ -202,9 +212,33 @@ struct memory {
 
     constexpr auto size() const -> usize { return (usize)m_memory_size; }
 
+
+    template<std::unsigned_integral T>
+    constexpr auto load_reserved(register_type address) -> T {
+        m_reservation = address;
+        return read<T>(address);
+    }
+
+    template<std::unsigned_integral T>
+    constexpr auto store_conditional(register_type address, T v) -> bool {
+        if (!m_reservation) {
+            return false;
+        }
+
+        if (*m_reservation != address) {
+            return false;
+        }
+
+        m_reservation = std::nullopt;
+        write<T>(address, v);
+
+        return true;
+    }
+
 private:
     Allocator m_allocator;
 
+    std::optional<register_type> m_reservation = std::nullopt;
     register_type m_memory_size = 0;
     u8* m_memory = nullptr;
 };

@@ -8,7 +8,7 @@
 #include <optional>
 #include <span>
 
-namespace rv::imgui {
+namespace imgui {
 
 template<typename T>
 struct data_type;
@@ -82,6 +82,14 @@ static auto guarded_group() {
     return stf::scope::scope_exit{[] { ImGui::EndGroup(); }};
 }
 
+template<typename Fn>
+static void group(Fn&& functor) {
+    ImGui::BeginGroup();
+    auto guard = stf::scope::scope_exit{[] { ImGui::EndGroup(); }};
+
+    std::invoke(std::forward<Fn>(functor));
+}
+
 static void help_marker(const char* desc) {
     ImGui::TextDisabled("(?)");
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
@@ -91,6 +99,44 @@ static void help_marker(const char* desc) {
         ImGui::PopTextWrapPos();
         ImGui::EndTooltip();
     }
+}
+
+template<typename Fn>
+inline void button(const char* label, const ImVec2& sz, Fn&& functor) {
+    if (!ImGui::Button(label, sz)) {
+        return;
+    }
+
+    std::invoke(std::forward<Fn>(functor));
+}
+
+template<typename Fn>
+inline void menu_item(const char* label, Fn&& functor) {
+    if (!ImGui::MenuItem(label)) {
+        return;
+    }
+
+    std::invoke(std::forward<Fn>(functor));
+}
+
+template<typename Fn>
+inline void menu(const char* label, Fn&& functor) {
+    if (!ImGui::BeginMenu(label)) {
+        return;
+    }
+
+    auto guard = stf::scope::scope_exit{[] { ImGui::EndMenu(); }};
+
+    std::invoke(std::forward<Fn>(functor));
+}
+
+inline void text(const char* str) {
+    ImGui::TextUnformatted(str);
+}
+
+template<typename... Ts>
+inline void text(fmt::format_string<Ts...> fmt, Ts&&... args) {
+    ImGui::TextUnformatted(fmt::format(std::move(fmt), std::forward<Ts>(args)...).c_str());
 }
 
 }// namespace trc::imgui

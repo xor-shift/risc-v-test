@@ -40,10 +40,11 @@ else()
     add_compile_options(-O0)
 endif()
 
-add_executable(${PROJECT_NAME}.elf src/startup.s src/entry.cpp src/main_gol.cpp)
+add_executable(${PROJECT_NAME}.elf src/startup.s src/entry.cpp src/main_atomic.cpp)
 
 add_custom_command(TARGET ${PROJECT_NAME}.elf POST_BUILD
     COMMAND ${CMAKE_OBJCOPY} -Oihex $<TARGET_FILE:${PROJECT_NAME}.elf> ${PROJECT_BINARY_DIR}/${PROJECT_NAME}.hex
     COMMAND ${CMAKE_OBJCOPY} -Obinary $<TARGET_FILE:${PROJECT_NAME}.elf> ${PROJECT_BINARY_DIR}/${PROJECT_NAME}.bin
     COMMAND readelf -SW $<TARGET_FILE:${PROJECT_NAME}.elf>
+    COMMAND sh -c "riscv64-unknown-elf-objdump -D -S -l -F $<TARGET_FILE:${PROJECT_NAME}.elf> > objdump.log"
     )
